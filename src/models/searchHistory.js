@@ -31,8 +31,15 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: true
         },
         coordinates: {
-            type: DataTypes.GEOMETRY('POINT'),
-            allowNull: true
+            type: DataTypes.JSON,
+            allowNull: true,
+            validate: {
+                isValidCoordinates(value) {
+                    if (value && (!value.latitude || !value.longitude)) {
+                        throw new Error('Coordinates must have latitude and longitude');
+                    }
+                }
+            }
         },
         radius: {
             type: DataTypes.INTEGER,
@@ -100,9 +107,7 @@ module.exports = (sequelize, DataTypes) => {
             { fields: ['sessionId'] },
             { fields: ['createdAt'] },
             { fields: ['isActive'] },
-            { fields: ['deletedAt'] },
-            // Spatial index for coordinates
-            { fields: ['coordinates'], type: 'SPATIAL' }
+            { fields: ['deletedAt'] }
         ],
         validate: {
             async validUser() {

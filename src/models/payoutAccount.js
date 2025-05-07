@@ -80,7 +80,8 @@ module.exports = (sequelize, DataTypes) => {
             {
                 fields: ['hostProfileId'],
                 where: { isDefault: true },
-                unique: true
+                unique: true,
+                name: 'payout_accounts_default_per_host'
             }
         ],
         validate: {
