@@ -111,26 +111,75 @@ db.init = async (alter = false) => {
         console.log('✅  Database connected successfully');
 
         // Create tables one by one in order of dependencies
-        await db.Role.sync();
-        await db.User.sync();
-        await db.UserRoles.sync();
-        await db.PropertyType.sync();
-        await db.RoomType.sync();
-        await db.Category.sync();
-        await db.Location.sync();
-        await db.Listing.sync();
-        await db.Amenity.sync();
-        await db.ListingAmenities.sync();
-        await db.Photo.sync();
-        await db.PropertyRule.sync();
-        await db.PropertyPolicy.sync();
-        await db.PropertyAvailability.sync();
-        await db.PriceRule.sync();
-        await db.SeasonalPricing.sync();
-        await db.Booking.sync();
-        await db.BookingCalendar.sync();
-        await db.Review.sync();
-        await db.Report.sync();
+        // Core models
+        await db.Role.sync({ alter });
+        await db.User.sync({ alter });
+        await db.UserRoles.sync({ alter });
+        
+        // Verification models
+        await db.Verification.sync({ alter });
+        await db.Document.sync({ alter });
+        await db.HostProfile.sync({ alter });
+        
+        // Property related models
+        await db.PropertyType.sync({ alter });
+        await db.RoomType.sync({ alter });
+        await db.Category.sync({ alter });
+        await db.Location.sync({ alter });
+        await db.Amenity.sync({ alter });
+        await db.Listing.sync({ alter });
+        await db.ListingAmenities.sync({ alter });
+        await db.Photo.sync({ alter });
+        await db.PropertyRule.sync({ alter });
+        await db.PropertyPolicy.sync({ alter });
+        await db.PropertyAvailability.sync({ alter });
+        
+        // Booking and pricing models
+        await db.PriceRule.sync({ alter });
+        await db.SeasonalPricing.sync({ alter });
+        await db.Booking.sync({ alter });
+        await db.BookingRequest.sync({ alter });
+        await db.BookingChange.sync({ alter });
+        await db.BookingCancellation.sync({ alter });
+        await db.BookingCalendar.sync({ alter });
+        
+        // Host management models
+        await db.HostVerification.sync({ alter });
+        await db.HostEarnings.sync({ alter });
+        
+        // Guest management models
+        await db.GuestProfile.sync({ alter });
+        await db.GuestPreferences.sync({ alter });
+        await db.GuestVerification.sync({ alter });
+        
+        // Payment related models
+        await db.Payment.sync({ alter });
+        await db.PayoutAccount.sync({ alter });
+        
+        // Review system models
+        await db.Review.sync({ alter });
+        await db.ReviewResponse.sync({ alter });
+        await db.ReviewReport.sync({ alter });
+        
+        // Search and discovery models
+        await db.SearchFilter.sync({ alter });
+        await db.SearchHistory.sync({ alter });
+        
+        // Communication models
+        await db.Conversation.sync({ alter });
+        await db.ConversationParticipant.sync({ alter });
+        await db.Message.sync({ alter });
+        await db.MessageAttachment.sync({ alter });
+        await db.Notification.sync({ alter });
+        
+        // Analytics models
+        await db.ViewCount.sync({ alter });
+        await db.ClickCount.sync({ alter });
+        
+        // System models
+        await db.SystemSetting.sync({ alter });
+        await db.Maintenance.sync({ alter });
+        await db.Report.sync({ alter });
 
         console.log('✅  Tables synced successfully');
     } catch (err) {
@@ -139,7 +188,7 @@ db.init = async (alter = false) => {
     }
 };
 
-module.exports = db; 
+module.exports = db;  
 /**
  * First, initialize Sequelize (if you haven't already):
 npm run db:init

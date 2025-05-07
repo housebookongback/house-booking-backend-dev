@@ -102,7 +102,8 @@ module.exports = (sequelize, DataTypes) => {
             {
                 fields: ['userId'],
                 where: { isDefault: true },
-                unique: true
+                unique: true,
+                name: 'search_filters_default_per_user'
             }
         ],
         validate: {
