@@ -188,7 +188,7 @@ db.init = async (alter = false) => {
     }
 };
 
-module.exports = db; 
+module.exports = db;  
 /**
  * First, initialize Sequelize (if you haven't already):
 npm run db:init
