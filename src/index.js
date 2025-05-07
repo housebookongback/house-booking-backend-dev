@@ -6,7 +6,7 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-const db      = require('./models'); // Import Sequelize models
+const db = require('./models'); // Import Sequelize models
 
 // Routes
 const houseRoutes   = require('./routes/houseRoutes');
