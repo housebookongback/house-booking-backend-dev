@@ -3,20 +3,22 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up (queryInterface, Sequelize) {
-    /**
-     * Add altering commands here.
-     *
-     * Example:
-     * await queryInterface.createTable('users', { id: Sequelize.INTEGER });
-     */
+    await queryInterface.addColumn('Listings', 'stepStatus', {
+      type: Sequelize.JSON,
+      allowNull: false,
+      defaultValue: {
+        basicInfo: false,
+        location: false,
+        details: false,
+        pricing: false,
+        photos: false,
+        rules: false,
+        calendar: false
+      }
+    });
   },
 
   async down (queryInterface, Sequelize) {
-    /**
-     * Add reverting commands here.
-     *
-     * Example:
-     * await queryInterface.dropTable('users');
-     */
+    await queryInterface.removeColumn('Listings', 'stepStatus');
   }
 };
