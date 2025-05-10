@@ -25,8 +25,87 @@ const Listing = db.Listing;
 const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
+const { Op } = require('sequelize');
 
 const listingController = {
+    // Public routes
+    getAllListings: async (req, res) => {
+        try {
+            const {
+                page = 1,
+                limit = 10,
+                sortBy = 'createdAt',
+                sortOrder = 'DESC',
+                categoryId,
+                locationId,
+                minPrice,
+                maxPrice,
+                minRating,
+                instantBookable
+            } = req.query;
+
+            // Build query options
+            const queryOptions = {
+                where: {
+                    status: 'published',
+                    isActive: true
+                },
+                include: [
+                    {
+                        model: db.Photo,
+                        as: 'photos',
+                        where: { isCover: true },
+                        required: false
+                    },
+                    {
+                        model: db.Location,
+                        as: 'locationDetails',
+                        attributes: ['id', 'name', 'slug']
+                    },
+                    {
+                        model: db.Category,
+                        as: 'category',
+                        attributes: ['id', 'name', 'slug'],
+                        required: false
+                    }
+                ],
+                order: [[sortBy, sortOrder]],
+                limit: parseInt(limit),
+                offset: (parseInt(page) - 1) * parseInt(limit)
+            };
+
+            // Add filters if provided
+            if (categoryId) queryOptions.where.categoryId = categoryId;
+            if (locationId) queryOptions.where.locationId = locationId;
+            if (minPrice) queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
+            if (maxPrice) queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.lte]: maxPrice };
+            if (minRating) queryOptions.where.averageRating = { [Op.gte]: minRating };
+            if (instantBookable) queryOptions.where.instantBookable = instantBookable === 'true';
+
+            // Get listings and total count
+            const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
+
+            res.json({
+                success: true,
+                data: {
+                    listings,
+                    pagination: {
+                        total: count,
+                        page: parseInt(page),
+                        limit: parseInt(limit),
+                        totalPages: Math.ceil(count / parseInt(limit))
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching listings:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch listings'
+            });
+        }
+    },
+
     // Step 1: Basic Information
     getPropertyTypes: async (req, res) => {
         try {
@@ -746,6 +825,153 @@ updateCalendar: async (req, res) => {
             res.status(500).json({
                 success: false,
                 error: 'Failed to publish listing'
+            });
+        }
+    },
+
+    getAvailability: async (req, res) => {
+        const { listingId } = req.params;
+        const { startDate, endDate, numberOfGuests } = req.query;
+
+        // Validate query parameters
+        if (!startDate || !endDate) {
+            return res.status(400).json({
+                success: false,
+                error: 'startDate and endDate are required'
+            });
+        }
+
+        try {
+            // Get the listing
+            const listing = await Listing.findOne({
+                where: { id: listingId, status: 'published' }
+            });
+
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found'
+                });
+            }
+
+            // Calculate the number of nights requested
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            const nights = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+            // Check if the requested stay is within limits
+            if (nights < listing.minimumNights) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Minimum stay is ${listing.minimumNights} nights`
+                });
+            }
+
+            if (nights > listing.maximumNights) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Maximum stay is ${listing.maximumNights} nights`
+                });
+            }
+
+            // Get calendar entries for the date range
+            const calendarEntries = await db.BookingCalendar.findAll({
+                where: {
+                    listingId,
+                    date: {
+                        [Op.between]: [startDate, endDate]
+                    }
+                },
+                include: [{
+                    model: db.PriceRule,
+                    as: 'priceRules',
+                    where: {
+                        isActive: true,
+                        startDate: { [Op.lte]: db.sequelize.col('BookingCalendar.date') },
+                        endDate: { [Op.gte]: db.sequelize.col('BookingCalendar.date') }
+                    },
+                    order: [['priority', 'DESC']]
+                }]
+            });
+
+            // Generate all dates in the range
+            const dates = [];
+            const currentDate = new Date(startDate);
+            const endDateObj = new Date(endDate);
+            
+            while (currentDate <= endDateObj) {
+                dates.push(new Date(currentDate));
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+
+            // Create a map of existing calendar entries
+            const calendarMap = new Map(
+                calendarEntries.map(entry => [entry.date.toISOString().split('T')[0], entry])
+            );
+
+            // Check availability and calculate prices for all dates
+            const availability = await Promise.all(dates.map(async (date) => {
+                const dateStr = date.toISOString().split('T')[0];
+                const entry = calendarMap.get(dateStr);
+
+                if (entry) {
+                    // Check date-specific stay limits
+                    if (nights < entry.minStay) {
+                        return {
+                            date: dateStr,
+                            isAvailable: false,
+                            error: `Minimum stay for this date is ${entry.minStay} nights`
+                        };
+                    }
+                    if (entry.maxStay && nights > entry.maxStay) {
+                        return {
+                            date: dateStr,
+                            isAvailable: false,
+                            error: `Maximum stay for this date is ${entry.maxStay} nights`
+                        };
+                    }
+
+                    // Use existing calendar entry
+                    const finalPrice = await entry.getFinalPrice();
+                    return {
+                        date: dateStr,
+                        isAvailable: entry.isAvailable,
+                        basePrice: entry.basePrice,
+                        finalPrice,
+                        minStay: entry.minStay,
+                        maxStay: entry.maxStay,
+                        checkInAllowed: entry.checkInAllowed,
+                        checkOutAllowed: entry.checkOutAllowed
+                    };
+                } else {
+                    // Use listing defaults
+                    return {
+                        date: dateStr,
+                        isAvailable: listing.defaultAvailability,
+                        basePrice: listing.pricePerNight,
+                        finalPrice: listing.pricePerNight,
+                        minStay: listing.minimumNights,
+                        maxStay: listing.maximumNights,
+                        checkInAllowed: listing.checkInDays.includes(date.getDay()),
+                        checkOutAllowed: listing.checkOutDays.includes(date.getDay())
+                    };
+                }
+            }));
+
+            return res.json({
+                success: true,
+                data: {
+                    listingId,
+                    startDate,
+                    endDate,
+                    availability
+                }
+            });
+        } catch (error) {
+            console.error('Error checking availability:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to check availability'
             });
         }
     }

@@ -33,4 +33,10 @@ router.get('/:listingId/step-status', authenticate, listingController.getStepSta
 // Final Step: Publish
 router.patch('/:listingId/publish', authenticate, listingController.publishListing);
 
+// check availability for booking
+router.get('/:listingId/availability',  listingController.getAvailability);
+
+// get all listings
+router.get('/', listingController.getAllListings);
+
 module.exports = router; 
