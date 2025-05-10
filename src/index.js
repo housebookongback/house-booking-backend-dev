@@ -12,6 +12,7 @@ const { uploadSingle } = require('./middleware/upload');
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
 
 const app = express();
 
@@ -46,6 +47,7 @@ db.init()
 /* ───────────── API routes ───────────── */
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 // Test upload route
 app.patch('/test-upload', uploadSingle, (req, res) => {
