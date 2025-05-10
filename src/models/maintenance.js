@@ -210,7 +210,8 @@ module.exports = (sequelize, DataTypes) => {
     Maintenance.associate = (models) => {
         Maintenance.belongsTo(models.User, {
             foreignKey: 'createdById',
-            as: 'creator'
+            as: 'creator',
+            onDelete: 'CASCADE'
         });
     };
 
