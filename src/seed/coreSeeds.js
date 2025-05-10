@@ -1,8 +1,7 @@
 const { faker } = require('@faker-js/faker');
 const bcrypt = require('bcryptjs');
 const sequelize  = require('../models').sequelize.models
-console.log('Seeding core models...',sequelize);
-console.log('Seeding core models...',sequelize);
+
 async function seedCoreModels() {
   try {
     // await sequelize.Maintenance.destroy({ where: {} });

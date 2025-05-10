@@ -1,4 +1,5 @@
 const { faker } = require('@faker-js/faker');
+const review = require('../models/review');
 const sequelize = require('../models').sequelize.models;
 
 async function seedReviewModels() {
@@ -116,7 +117,7 @@ async function seedReviewModels() {
     throw error;
   }
 }
-
+// seedReviewModels()
 module.exports = seedReviewModels;
 
 // // Execute if called directly

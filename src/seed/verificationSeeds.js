@@ -54,5 +54,5 @@ async function seedVerificationModels() {
     throw error;
   }
 }
-
+// seedVerificationModels();
 module.exports = seedVerificationModels;

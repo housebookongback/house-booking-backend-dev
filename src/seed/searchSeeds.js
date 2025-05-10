@@ -63,7 +63,7 @@ async function seedSearchModels() {
     throw error;
   }
 }
-
+// seedSearchModels();
 module.exports = seedSearchModels;
 
 // Execute if called directly

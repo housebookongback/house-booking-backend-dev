@@ -114,7 +114,7 @@ async function seedPaymentModels() {
     throw error;
   }
 }
-
+// seedPaymentModels()
 module.exports = seedPaymentModels;
 
 // Execute if called directly

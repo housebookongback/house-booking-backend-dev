@@ -86,7 +86,7 @@ async function seedAnalyticsModels() {
     throw error;
   }
 }
-
+// seedAnalyticsModels()
 module.exports = seedAnalyticsModels;
 
 // Exécution si appelé directement

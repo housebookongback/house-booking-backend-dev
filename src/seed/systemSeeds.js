@@ -7,6 +7,7 @@ async function seedSystemModels() {
     await sequelize.SystemSetting.destroy({ where: {} });
     await sequelize.Maintenance.destroy({ where: {} });
     await sequelize.Report.destroy({ where: {} });
+    await sequelize.Photo.destroy({ where: {} });
 
     // Seed SystemSettings avec des clés uniques
     const systemSettings = [
@@ -89,7 +90,7 @@ async function seedSystemModels() {
     const reports = Array.from({ length: 10 }).map(() => {
       const reporter = faker.helpers.arrayElement(users);
       const reportedUser = faker.helpers.arrayElement(users.filter(u => u.id !== reporter.id));
-      const listing = faker.helpers.arrayElement(listings);
+      const listing = faker.helpers.arrayElement(listings);  // Now using the correct 'listings' variable
       const type = faker.helpers.arrayElement(['listing', 'user']);
 
       return {
@@ -117,21 +118,68 @@ async function seedSystemModels() {
 
     await sequelize.Report.bulkCreate(reports);
 
-    console.log('System models seeded successfully');
+    // Use the existing listings variable instead of declaring it again
+    if (!listings.length) {
+      throw new Error('No listings found. Please seed listings first.');
+    }
+
+    // Sample apartment photo URLs (using realistic apartment photo URLs)
+    const apartmentPhotoUrls = [
+      'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267', // Living Room
+      'https://images.unsplash.com/photo-1484154218962-a197022b5858', // Kitchen
+      'https://images.unsplash.com/photo-1501876725168-00c445821c9e', // Bedroom
+      'https://images.unsplash.com/photo-1584622650111-993a426fbf0a', // Bathroom
+      'https://images.unsplash.com/photo-1493809842364-78817add7ffb', // Dining Area
+      'https://images.unsplash.com/photo-1512917774080-9991f1c4c750', // Exterior
+      'https://images.unsplash.com/photo-1502672260266-1c1ef2d93688', // Pool
+      'https://images.unsplash.com/photo-1616137466211-f939a420be84', // Garden
+    ];
+
+    const photoCategories = [
+      'exterior', 'interior', 'bedroom', 'bathroom', 'kitchen',
+      'living_room', 'dining_room', 'garden', 'pool', 'view'
+    ];
+
+    // Seed Photos
+    const photos = [];
+    for (const listing of listings) {
+      // Create 5-8 photos per listing
+      const numPhotos = faker.number.int({ min: 5, max: 8 });
+      
+      for (let i = 0; i < numPhotos; i++) {
+        const url = faker.helpers.arrayElement(apartmentPhotoUrls);
+        const category = faker.helpers.arrayElement(photoCategories);
+        
+        photos.push({
+          listingId: listing.id,
+          url: url,
+          thumbnailUrl: `${url}?w=300&fit=crop`, // Create thumbnail version
+          fileType: 'image/jpeg',
+          fileSize: faker.number.int({ min: 500000, max: 5000000 }), // 500KB to 5MB
+          width: 1920,
+          height: 1080,
+          caption: faker.lorem.sentence(),
+          category: category,
+          tags: faker.helpers.arrayElements(['modern', 'spacious', 'bright', 'cozy', 'luxury'], 
+            faker.number.int({ min: 1, max: 3 })),
+          takenAt: faker.date.past(),
+          isCover: i === 0, // First photo is cover
+          displayOrder: i,
+          status: 'approved',
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+    }
+
+    await sequelize.Photo.bulkCreate(photos);
+
+    console.log('System models and photos seeded successfully');
   } catch (error) {
     console.error('Error seeding system models:', error);
     throw error;
   }
 }
-
-// Only call the seed function if this file is run directly
-// if (require.main === module) {
-//   seedSystemModels()
-//     .then(() => process.exit(0))
-//     .catch((error) => {
-//       console.error('Failed to seed system models:', error);
-//       process.exit(1);
-//     });
-// }
-
+// seedSystemModels()
 module.exports = seedSystemModels;

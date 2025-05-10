@@ -27,12 +27,10 @@ async function seedBookingModels() {
     });
 
     const hosts = await sequelize.models.User.findAll({
-      include: [{ model: sequelize.models.HostProfile, as: 'hostProfile', required: true }],
+      include: [{ model: sequelize.models.HostProfile, as: 'hostProfile', required: false }],
       attributes: ['id'],
-      raw: true,
       transaction
     });
-
     const listingIds = listings.map((l) => l.id);
     const guestIds = guests.map((g) => g.id);
     const hostIds = hosts.map((h) => h.id);
@@ -167,6 +165,37 @@ async function seedBookingModels() {
 
     await sequelize.models.BookingCancellation.bulkCreate(bookingCancellations, { transaction });
 
+    // Create booking calendars for each listing
+    const bookingCalendars = [];
+    for (const listingId of listingIds) {
+      // Create calendar entries for the next 90 days
+      const startDate = new Date();
+      for (let i = 0; i < 90; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        
+        bookingCalendars.push({
+          listingId,
+          date,
+          isAvailable: faker.datatype.boolean(),
+          basePrice: faker.number.float({ min: 50, max: 500, precision: 0.01 }),
+          minStay: faker.number.int({ min: 1, max: 3 }),
+          maxStay: faker.number.int({ min: 7, max: 30 }),
+          checkInAllowed: faker.datatype.boolean(),
+          checkOutAllowed: faker.datatype.boolean(),
+          notes: faker.datatype.boolean() ? faker.lorem.sentence() : null,
+          metadata: {
+            lastUpdatedBy: 'system',
+            reason: 'initial_seed'
+          },
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+    }
+
+    await sequelize.models.BookingCalendar.bulkCreate(bookingCalendars, { transaction });
+
     await transaction.commit();
     console.log('Booking models seeded successfully');
   } catch (error) {
@@ -175,5 +204,5 @@ async function seedBookingModels() {
     throw error;
   }
 }
-// seedBookingModels();
+// seedBookingModels()
 module.exports = seedBookingModels;

@@ -355,18 +355,18 @@ module.exports = (sequelize, DataTypes) => {
     });
 
       // Generate unique slug before validation
-  Listing.prototype.generateSlug = async function() {
+  Listings.prototype.generateSlug = async function() {
     const base = this.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
     let slug = base, count = 1;
-    while (await Listing.findOne({ where:{ slug }})) slug = `${base}-${count++}`;
+    while (await Listings.findOne({ where:{ slug }})) slug = `${base}-${count++}`;
     return slug;
   };
-  Listing.addHook('beforeValidate', async listing => {
+  Listings.addHook('beforeValidate', async listing => {
     if (!listing.slug && listing.title) listing.slug = await listing.generateSlug();
   });
 
  // After publish, seed calendar
-  Listing.addHook('afterUpdate', async listing => {
+  Listings.addHook('afterUpdate', async listing => {
     if (listing.changed('status') && listing.status === 'published') {
       const days=365, today=new Date(), batch=[];
       for(let i=0;i<days;i++){const date=new Date(today);date.setDate(date.getDate() + i);batch.push({
