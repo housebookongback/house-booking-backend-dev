@@ -189,5 +189,24 @@ module.exports = (sequelize, DataTypes) => {
         User.hasMany(models.Maintenance, { foreignKey: 'userId', as: 'maintenances' });
     };
 
+    // Add these methods here, before return User
+    const crypto = require('crypto');
+
+    // Generate email verification token
+    User.prototype.generateVerificationToken = function () {
+        const token = crypto.randomBytes(32).toString('hex');
+        this.emailVerificationToken = token;
+        return token;
+    };
+
+    // Generate password reset token
+    User.prototype.generatePasswordResetToken = function () {
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+        this.passwordResetToken = token;
+        this.passwordResetExpires = expires;
+        return token;
+    };
+
     return User;
 }; 

@@ -6,12 +6,11 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-const {db} = require('./models'); // Import Sequelize models
+const db      = require('./models'); // Import Sequelize models
+const { uploadSingle } = require('./middleware/upload');
 
 // Routes
-const houseRoutes   = require('./routes/houseRoutes');
-// const userRoutes    = require('./routes/userRoutes');
-//const bookingRoutes = require('./routes/bookingRoutes');
+const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 
 const app = express();
@@ -43,11 +42,17 @@ db.init()
     console.error('❌  Database connection failed:', error);
   });
 
+  app.use('/uploads', express.static('uploads'));
 /* ───────────── API routes ───────────── */
-app.use('/api/auth',    authRoutes);
-app.use('/api/houses',   houseRoutes);
-// app.use('/api/users',    userRoutes);
-//app.use('/api/bookings', bookingRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/listings', listingRoutes);
+
+// Test upload route
+app.patch('/test-upload', uploadSingle, (req, res) => {
+  console.log('⚡ req.file:', req.file);
+  console.log('⚡ req.body:', req.body);
+  return res.json({ received: Boolean(req.file), file: req.file });
+});
 
 /* ───────────── 404 fallback ───────────── */
 app.use((_, res) => res.status(404).json({ 
@@ -71,3 +76,4 @@ app.listen(PORT, () => {
     console.log(`🚀  Server is running on http://localhost:${PORT}`);
     console.log(`📚  API Documentation: http://localhost:${PORT}/api-docs`);
 });
+

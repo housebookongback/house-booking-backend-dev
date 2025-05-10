@@ -1,4 +1,16 @@
 // src/models/listing.js
+/**
+ * ✅ Final Step Reminder: Publishing a Listing
+ * ------------------------------------------------
+ * 🔹 Once all steps are completed (basicInfo → calendar)
+ *    - Ensure stepStatus flags are all true
+ * 🔹 Call: POST /api/listings/:listingId/publish
+ *    - This will trigger Sequelize validations
+ *    - Ensures all required fields, at least one photo, one rule, etc.
+ * 🔹 Do NOT manually set status = 'published' on frontend!
+ *    - Let backend handle it securely
+ */
+
 const { Op, literal } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
@@ -14,6 +26,14 @@ module.exports = (sequelize, DataTypes) => {
         validate: {
           notEmpty: true,
           len: [5, 100]
+        }
+      },
+      slug: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        unique: true,
+        validate: {
+          notEmpty: true
         }
       },
       description: {
@@ -55,37 +75,79 @@ module.exports = (sequelize, DataTypes) => {
       },
       locationId: {
         type: DataTypes.INTEGER,
-        allowNull: false,
+        allowNull: true,
         references: { model: 'Locations', key: 'id' },
         onDelete: 'CASCADE',
-        onUpdate: 'CASCADE'
+        onUpdate: 'CASCADE',
+        validate: {
+          async isValidIfPublished(value) {
+            if (this.status === 'published' && !value) {
+              throw new Error('Location is required for published listings');
+            }
+          }
+        }
       },
       // ─── Accommodation details ────────────────
       accommodates: {
         type: DataTypes.INTEGER,
-        allowNull: false,
-        validate: { min: 1 }
+        allowNull: true,
+        validate: {
+          min: 1,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && (value == null || value < 1)) {
+              throw new Error('Accommodates is required for published listings');
+            }
+          }
+        }
       },
       bedrooms: {
         type: DataTypes.INTEGER,
-        allowNull: false,
-        validate: { min: 0 }
+        allowNull: true,
+        validate: {
+          min: 0,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && value == null) {
+              throw new Error('Bedrooms are required for published listings');
+            }
+          }
+        }
       },
       beds: {
         type: DataTypes.INTEGER,
-        allowNull: false,
-        validate: { min: 1 }
+        allowNull: true,
+        validate: {
+          min: 1,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && (value == null )) {
+              throw new Error('Beds are required for published listings');
+            }
+          }
+        }
       },
       bathrooms: {
         type: DataTypes.FLOAT,
-        allowNull: false,
-        validate: { min: 0 }
+        allowNull: true,
+        validate: {
+          min: 0,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && value == null) {
+              throw new Error('Bathrooms are required for published listings');
+            }
+          }
+        }
       },
       // ─── Pricing ───────────────────────────────
       pricePerNight: {
         type: DataTypes.DECIMAL(10,2),
-        allowNull: false,
-        validate: { min: 0 }
+        allowNull: true,
+        validate: {
+          min: 0,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && (value == null || value < 0)) {
+              throw new Error('Price per night is required for published listings');
+            }
+          }
+        }
       },
       cleaningFee: {
         type: DataTypes.DECIMAL(10,2),
@@ -101,34 +163,67 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.INTEGER,
         allowNull: false,
         defaultValue: 1,
-        validate: { min: 1 }
+        validate: {
+          min: 1,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && (!value || value < 1)) {
+              throw new Error('Minimum nights is required for published listings');
+            }
+          }
+        }
       },
       maximumNights: {
         type: DataTypes.INTEGER,
-        allowNull: true,
-        validate: { min: 1 }
+        allowNull: false,
+        defaultValue: 1,
+        validate: {
+          min: 1,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && value == null) {
+              throw new Error('Maximum nights is required for published listings');
+            }
+          }
+        }
       },
       cancellationPolicy: {
         type: DataTypes.ENUM('flexible','moderate','strict'),
-        allowNull: false,
-        defaultValue: 'moderate'
+        allowNull: true,
+        defaultValue: 'moderate',
+        validate: {
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && !value) {
+              throw new Error('Cancellation policy is required for published listings');
+            }
+          }
+        }
       },
       // ─── Location & address ───────────────────
       address: {
         type: DataTypes.JSON,
-        allowNull: false,
+        allowNull: true,
         validate: {
           isValidAddress(value) {
-            if (!value.street || !value.city || !value.country) {
-              throw new Error('Address must include street, city, and country');
+            if (this.status === 'published') {
+              if (!value || !value.street || !value.city || !value.country) {
+                throw new Error('Address must include street, city, and country for published listings');
+              }
             }
           }
         }
       },
       coordinates: {
         type: DataTypes.JSON,
-        allowNull: false,
-        comment: 'Stores latitude and longitude as {lat: number, lng: number}'
+        allowNull: true,
+        comment: 'Stores latitude and longitude as {lat: number, lng: number}',
+        validate: {
+          isValidCoords(value) {
+            if (this.status === 'published') {
+              if (!value || typeof value.lat !== 'number' || typeof value.lng !== 'number') {
+                throw new Error('Coordinates must include valid lat and lng for published listings');
+              }
+            }
+          }
+        }
       },
       // ─── Flags & status ───────────────────────
       isActive: {
@@ -163,6 +258,34 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: 0,
         validate: { min: 0 }
       },
+      stepStatus: {
+        type: DataTypes.JSON,
+        allowNull: false,
+        defaultValue: {
+            basicInfo: false,
+            location: false,
+            details: false,
+            pricing: false,
+            photos: false,
+            rules: false,
+            calendar: false
+        }
+      },
+      defaultAvailability: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+      },
+      checkInDays: {
+        type: DataTypes.ARRAY(DataTypes.INTEGER),    // Postgres only
+        allowNull: false,
+        defaultValue: [0,1,2,3,4,5,6]                // Sunday → Saturday
+      },
+      checkOutDays: {
+        type: DataTypes.ARRAY(DataTypes.INTEGER),
+        allowNull: false,
+        defaultValue: [0,1,2,3,4,5,6]
+      },
     }, {
       tableName: 'Listings', // Ensure the table name matches 'Listings'
       timestamps: true,
@@ -196,57 +319,69 @@ module.exports = (sequelize, DataTypes) => {
       ],
       validate: {
         async validHost() {
-          const host = await sequelize.models.User.findByPk(this.hostId);
-          if (!host) throw new Error('Invalid host');
+          if (this.status === 'published') {
+            const host = await sequelize.models.User.findByPk(this.hostId);
+            if (!host) throw new Error('Invalid host');
+          }
         },
         async validLocation() {
-          const location = await sequelize.models.Location.findByPk(this.locationId);
-          if (!location) throw new Error('Invalid location');
+          if (this.status === 'published') {
+            const location = await sequelize.models.Location.findByPk(this.locationId);
+            if (!location) throw new Error('Invalid location');
+          }
         },
         validMaxNights() {
           if (this.maximumNights && this.maximumNights < this.minimumNights) {
             throw new Error('Maximum nights must be greater than minimum nights');
           }
-        }
-      },
-      hooks: {
-        beforeCreate: async (listing) => {
-            if (!listing.slug) {
-                listing.slug = await listing.generateSlug();
+        },
+        async hasPhotosIfPublished() {
+            if (this.status === 'published') {
+                const photos = await this.getPhotos();
+                if (photos.length === 0) {
+                    throw new Error('At least one photo is required for published listings');
+                }
             }
         },
-        afterUpdate: async (listing) => {
-            // Check if the listing was just published
-            if (listing.changed('status') && listing.status === 'published') {
-                const days = 365;
-                const today = new Date();
-                const batch = [];
-
-                for (let i = 0; i < days; i++) {
-                    const date = new Date(today);
-                    date.setDate(date.getDate() + i);
-                    
-                    batch.push({
-                        listingId: listing.id,
-                        date,
-                        basePrice: listing.pricePerNight,
-                        isAvailable: listing.defaultAvailability,
-                        minStay: listing.minStay,
-                        maxStay: listing.maxStay,
-                        checkInAllowed: listing.checkInDays.includes(date.getDay()),
-                        checkOutAllowed: listing.checkOutDays.includes(date.getDay())
-                    });
+        async hasRulesIfPublished() {
+            if (this.status === 'published') {
+                const rules = await this.getPropertyRules();
+                if (rules.length === 0) {
+                    throw new Error('At least one property rule is required for published listings');
                 }
-
-                await sequelize.models.BookingCalendar.bulkCreate(batch, {
-                    ignoreDuplicates: true,
-                    validate: true
-                });
             }
         }
       }
     });
-  
+
+      // Generate unique slug before validation
+  Listing.prototype.generateSlug = async function() {
+    const base = this.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
+    let slug = base, count = 1;
+    while (await Listing.findOne({ where:{ slug }})) slug = `${base}-${count++}`;
+    return slug;
+  };
+  Listing.addHook('beforeValidate', async listing => {
+    if (!listing.slug && listing.title) listing.slug = await listing.generateSlug();
+  });
+
+ // After publish, seed calendar
+  Listing.addHook('afterUpdate', async listing => {
+    if (listing.changed('status') && listing.status === 'published') {
+      const days=365, today=new Date(), batch=[];
+      for(let i=0;i<days;i++){const date=new Date(today);date.setDate(date.getDate() + i);batch.push({
+        listingId:listing.id,
+        date,
+        basePrice:parseFloat(listing.pricePerNight),
+        isAvailable:listing.defaultAvailability,
+        minStay:listing.minimumNights,
+        maxStay:listing.maximumNights,
+        checkInAllowed:listing.checkInDays.includes(date.getDay()),
+        checkOutAllowed:listing.checkOutDays.includes(date.getDay())
+      });}
+      await sequelize.models.BookingCalendar.bulkCreate(batch,{ignoreDuplicates:true,validate:true});
+    }
+  });
     // Class Methods
     Listings.findByHost = function(hostId) {
       return this.scope('byHost', hostId).findAll();
