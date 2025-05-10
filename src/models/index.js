@@ -1,6 +1,6 @@
+require('dotenv').config({ path: '../../.env' })
 const { Sequelize, DataTypes } = require('sequelize');
 const config = require('../config/config');
-
 /* ---------- Sequelize instance ---------- */
 const sequelize = new Sequelize(
     process.env.DATABASE_NAME,      // Database name from .env
@@ -188,7 +188,7 @@ db.init = async (alter = false) => {
     }
 };
 
-module.exports = db;  
+module.exports = {db, sequelize};  
 /**
  * First, initialize Sequelize (if you haven't already):
 npm run db:init
