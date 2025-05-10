@@ -18,7 +18,10 @@ module.exports = (sequelize, DataTypes) => {
         url: {
             type: DataTypes.STRING,
             allowNull: false,
-            validate: { isUrl: true }
+            validate: {
+                notEmpty: true,
+                is: /^https?:\/\/.+/i  // This allows both http and https URLs
+            }
         },
         thumbnailUrl: {
             type: DataTypes.STRING,
@@ -131,10 +134,18 @@ module.exports = (sequelize, DataTypes) => {
             { fields: ['tags'], using: 'GIN' }
         ],
         validate: {
+            // async validListing() {
+            //     const listing = await sequelize.models.Listing.findByPk(this.listingId);
+            //     if (!listing) throw new Error('Invalid listing');
+            // },
             async validListing() {
-                const listing = await sequelize.models.Listing.findByPk(this.listingId);
-                if (!listing) throw new Error('Invalid listing');
-            },
+                       // bypass Listing's default scope so drafts (and anything else) are found
+                      const ListingModel = sequelize.models.Listing;
+                       const listing = await ListingModel.scope('all').findByPk(this.listingId);
+                       if (!listing) {
+                           throw new Error('Invalid listing');
+                       }
+                   },
             validTags() {
                 if (this.tags && !Array.isArray(this.tags)) {
                     throw new Error('Tags must be an array');
@@ -144,7 +155,7 @@ module.exports = (sequelize, DataTypes) => {
         hooks: {
             beforeCreate: async (photo) => {
                 const PhotoModel = sequelize.models.Photo;
-                const count = await PhotoModel.scope('byListing', photo.listingId).count();
+                const count = await PhotoModel.scope({ method: ['byListing', photo.listingId] }).count();
                 if (count === 0) photo.isCover = true;
 
                 if (!photo.thumbnailUrl && photo.url) {
@@ -154,7 +165,9 @@ module.exports = (sequelize, DataTypes) => {
             afterDestroy: async (photo) => {
                 const PhotoModel = sequelize.models.Photo;
                 if (photo.isCover) {
-                    const next = await PhotoModel.scope('byListing', photo.listingId).findOne({ order: [['displayOrder','ASC']] });
+                    const next = await PhotoModel.scope({ method: ['byListing', photo.listingId] }).findOne({ 
+                        order: [['displayOrder','ASC']] 
+                    });
                     if (next) await next.update({ isCover: true });
                 }
             }
