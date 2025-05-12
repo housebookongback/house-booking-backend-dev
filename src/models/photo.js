@@ -140,7 +140,8 @@ module.exports = (sequelize, DataTypes) => {
             // },
             async validListing() {
                        // bypass Listing's default scope so drafts (and anything else) are found
-                      const ListingModel = sequelize.models.Listing;
+                      const ListingModel = sequelize.models.Listings
+                      console.log('ListingModel:3546842', ListingModel);
                        const listing = await ListingModel.scope('all').findByPk(this.listingId);
                        if (!listing) {
                            throw new Error('Invalid listing');

@@ -6,16 +6,11 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-<<<<<<< HEAD
-const db    = require('./models'); // Import Sequelize models
-const { uploadSingle } = require('./middleware/upload');
-=======
 
 const db      = require('./models'); // Import Sequelize models
 //const { uploadSingle } = require('./middleware/upload');
 const { uploadMultiple } = require('./middleware/upload');
 
->>>>>>> 2ccc0e2abe370bb215e931286ef5e8934d6b2317
 
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
