@@ -6,12 +6,21 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
+<<<<<<< HEAD
 const db    = require('./models'); // Import Sequelize models
 const { uploadSingle } = require('./middleware/upload');
+=======
+
+const db      = require('./models'); // Import Sequelize models
+//const { uploadSingle } = require('./middleware/upload');
+const { uploadMultiple } = require('./middleware/upload');
+
+>>>>>>> 2ccc0e2abe370bb215e931286ef5e8934d6b2317
 
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
+const bookingRoutes = require('./routes/bookingRoutes');
 
 const app = express();
 
@@ -46,9 +55,10 @@ db.init()
 /* ───────────── API routes ───────────── */
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 // Test upload route
-app.patch('/test-upload', uploadSingle, (req, res) => {
+app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.file:', req.file);
   console.log('⚡ req.body:', req.body);
   return res.json({ received: Boolean(req.file), file: req.file });

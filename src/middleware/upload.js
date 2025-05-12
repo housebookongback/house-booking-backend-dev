@@ -27,9 +27,9 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
 });
 
-const uploadSingle = upload.single('photo'); // Changed to 'photo' to match controller
+const uploadMultiple = upload.array('photos',10);
 
 module.exports = {
     upload,
-    uploadSingle
+    uploadMultiple
 }; 
