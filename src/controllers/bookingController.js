@@ -1,7 +1,7 @@
 const db = require('../models');
 const { ValidationError } = require('sequelize');
-
 const { Op } = require('sequelize');
+const sequelize = require('sequelize');
 
 const bookingController = {
     createBookingRequest: async (req, res) => {
@@ -171,6 +171,105 @@ const bookingController = {
             return res.status(500).json({
                 success: false,
                 error: 'Failed to create booking request'
+            });
+        }
+    },
+    updateBookingRequestStatus: async (req, res) => {
+        const { requestId } = req.params;
+        const { status, responseMessage } = req.body;
+        const hostId = req.user.id;
+
+        try {
+            // Start a transaction
+            const result = await db.sequelize.transaction(async (t) => {
+                // Find the booking request with its listing
+                const bookingRequest = await db.BookingRequest.findOne({
+                    where: { 
+                        id: requestId,
+                        hostId: hostId,
+                        status: 'pending'
+                    },
+                    include: [{
+                        model: db.Listing,
+                        as: 'listing'
+                    }],
+                    transaction: t
+                });
+
+                if (!bookingRequest) {
+                    throw new Error('Booking request not found or already processed');
+                }
+
+                // Update the request status
+                await bookingRequest.update({
+                    status,
+                    responseMessage,
+                    responseDate: new Date()
+                }, { transaction: t });
+
+                // If approved, create the actual booking
+                if (status === 'approved') {
+                    // Check for date conflicts again
+                    const conflicts = await bookingRequest.checkDateConflicts();
+                    if (conflicts.length > 0) {
+                        throw new Error('Selected dates conflict with existing bookings');
+                    }
+
+                    // Create the booking
+                    const booking = await db.Booking.create({
+                        listingId: bookingRequest.listingId,
+                        guestId: bookingRequest.guestId,
+                        hostId: bookingRequest.hostId,
+                        checkIn: bookingRequest.checkIn,
+                        checkOut: bookingRequest.checkOut,
+                        numberOfGuests: bookingRequest.numberOfGuests,
+                        totalPrice: bookingRequest.totalPrice,
+                        status: 'pending',
+                        paymentStatus: 'pending',
+                        specialRequests: bookingRequest.message
+                    }, { transaction: t });
+
+                    // Update calendar availability
+                    await db.BookingCalendar.update(
+                        { isAvailable: false },
+                        {
+                            where: {
+                                listingId: bookingRequest.listingId,
+                                date: {
+                                    [Op.between]: [bookingRequest.checkIn, bookingRequest.checkOut]
+                                }
+                            },
+                            transaction: t
+                        }
+                    );
+
+                    return { bookingRequest, booking };
+                }
+
+                return { bookingRequest };
+            });
+
+            return res.status(200).json({
+                success: true,
+                message: `Booking request ${status} successfully`,
+                data: {
+                    requestId: result.bookingRequest.id,
+                    status: result.bookingRequest.status,
+                    responseMessage: result.bookingRequest.responseMessage,
+                    responseDate: result.bookingRequest.responseDate,
+                    booking: result.booking ? {
+                        id: result.booking.id,
+                        status: result.booking.status,
+                        paymentStatus: result.booking.paymentStatus
+                    } : null
+                }
+            });
+
+        } catch (error) {
+            console.error('Error updating booking request:', error);
+            return res.status(500).json({
+                success: false,
+                error: error.message || 'Failed to update booking request'
             });
         }
     }
