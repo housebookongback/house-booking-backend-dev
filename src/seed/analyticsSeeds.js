@@ -1,17 +1,17 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
-
+const db = require('../models');
+console.log(db.User,"hgvhzefbkzhfvk");
 async function seedAnalyticsModels() {
   try {
     // Nettoyage des données existantes
-    await sequelize.ClickCount.destroy({ where: {} });
-    await sequelize.ViewCount.destroy({ where: {} });
+    await db.ClickCount.destroy({ where: {} });
+    await db.ViewCount.destroy({ where: {} });
 
     // Récupération des IDs existants pour chaque type d'entité
-    const listings = await sequelize.Listings.findAll({ attributes: ['id'] });
-    const users = await sequelize.User.findAll({ attributes: ['id'] });
-    const categories = await sequelize.Category.findAll({ attributes: ['id'] });
-    const locations = await sequelize.Location.findAll({ attributes: ['id'] });
+    const listings = await db.Listing.findAll({ attributes: ['id'] });
+    const users = await db.User.findAll({ attributes: ['id'] });
+    const categories = await db.Category.findAll({ attributes: ['id'] });
+    const locations = await db.Location.findAll({ attributes: ['id'] });
 
     // Création des combinaisons avec les IDs existants
     const combinations = [];
@@ -77,8 +77,8 @@ async function seedAnalyticsModels() {
     }));
 
     // Insertion des données
-    await sequelize.ClickCount.bulkCreate(clickCounts);
-    await sequelize.ViewCount.bulkCreate(viewCounts);
+    await db.ClickCount.bulkCreate(clickCounts);
+    await db.ViewCount.bulkCreate(viewCounts);
 
     console.log('Modèles Analytics générés avec succès');
   } catch (error) {

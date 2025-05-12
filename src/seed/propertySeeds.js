@@ -1,5 +1,5 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
+const db = require('../models')
 
 // Map prédéfinie pour les types de chambres
 const ROOM_TYPES = new Map([
@@ -60,17 +60,17 @@ const AMENITIES = new Map([
 async function seedPropertyModels() {
   try {
     // Clean existing data
-    await sequelize.PropertyAvailability.destroy({ where: {}, force: true });
-    await sequelize.PropertyPolicy.destroy({ where: {}, force: true });
-    await sequelize.PropertyRule.destroy({ where: {}, force: true });
-    await sequelize.Photo.destroy({ where: {}, force: true });
-    await sequelize.ListingAmenities.destroy({ where: {}, force: true });
-    await sequelize.Listings.destroy({ where: {}, force: true });
-    await sequelize.Amenity.destroy({ where: {}, force: true });
-    await sequelize.Location.destroy({ where: {}, force: true });
-    await sequelize.Category.destroy({ where: {}, force: true });
-    await sequelize.RoomType.destroy({ where: {}, force: true });
-    await sequelize.PropertyType.destroy({ where: {}, force: true });
+    await db.PropertyAvailability.destroy({ where: {}, force: true });
+    await db.PropertyPolicy.destroy({ where: {}, force: true });
+    await db.PropertyRule.destroy({ where: {}, force: true });
+    await db.Photo.destroy({ where: {}, force: true });
+    await db.ListingAmenities.destroy({ where: {}, force: true });
+    await db.Listing.destroy({ where: {}, force: true });
+    await db.Amenity.destroy({ where: {}, force: true });
+    await db.Location.destroy({ where: {}, force: true });
+    await db.Category.destroy({ where: {}, force: true });
+    await db.RoomType.destroy({ where: {}, force: true });
+    await db.PropertyType.destroy({ where: {}, force: true });
 
     // Seed PropertyTypes
     // Seed PropertyTypes with predefined values
@@ -82,7 +82,7 @@ async function seedPropertyModels() {
       updatedAt: new Date()
     }));
 
-    const createdPropertyTypes = await sequelize.PropertyType.bulkCreate(propertyTypes, {
+    const createdPropertyTypes = await db.PropertyType.bulkCreate(propertyTypes, {
       ignoreDuplicates: true
     });
 
@@ -96,7 +96,7 @@ async function seedPropertyModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.RoomType.bulkCreate(roomTypes, {
+    await db.RoomType.bulkCreate(roomTypes, {
       ignoreDuplicates: true
     });
 
@@ -110,7 +110,7 @@ async function seedPropertyModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.Category.bulkCreate(categories);
+    await db.Category.bulkCreate(categories);
 
     // Seed Locations
     const locations = Array.from({ length: 10 }).map(() => ({
@@ -122,7 +122,7 @@ async function seedPropertyModels() {
       updatedAt: new Date()
     }));
 
-    const createdLocations = await sequelize.Location.bulkCreate(locations);
+    const createdLocations = await db.Location.bulkCreate(locations);
 
     // Seed Amenities
     // Seed Amenities avec des noms uniques
@@ -134,16 +134,16 @@ async function seedPropertyModels() {
       updatedAt: new Date()
     }));
 
-    const createdAmenities = await sequelize.Amenity.bulkCreate(amenities, {
+    const createdAmenities = await db.Amenity.bulkCreate(amenities, {
       ignoreDuplicates: true
     });
 
     // Seed Listings
     // Récupérer les IDs des hôtes existants
-    const existingHosts = await sequelize.HostProfile.findAll({ 
+    const existingHosts = await db.HostProfile.findAll({ 
       paranoid: false,
       include: [{
-        model: sequelize.User,
+        model: db.User,
         as: 'user'
       }]
     });
@@ -186,7 +186,7 @@ async function seedPropertyModels() {
       };
     });
 
-    const createdListings = await sequelize.Listings.bulkCreate(listings);
+    const createdListings = await db.Listing.bulkCreate(listings);
 
     // Seed ListingAmenities
     const listingAmenities = createdListings.flatMap(listing => 
@@ -199,7 +199,7 @@ async function seedPropertyModels() {
         }))
     );
 
-    await sequelize.ListingAmenities.bulkCreate(listingAmenities);
+    await db.ListingAmenities.bulkCreate(listingAmenities);
 
     // Seed PropertyRules
     const propertyRules = createdListings.flatMap(listing => {
@@ -245,7 +245,7 @@ async function seedPropertyModels() {
       }));
     });
 
-    await sequelize.PropertyRule.bulkCreate(propertyRules);
+    await db.PropertyRule.bulkCreate(propertyRules);
 
     // Seed PropertyAvailability
     const propertyAvailabilities = [];
@@ -277,7 +277,7 @@ async function seedPropertyModels() {
       }
     }
 
-    await sequelize.PropertyAvailability.bulkCreate(propertyAvailabilities);
+    await db.PropertyAvailability.bulkCreate(propertyAvailabilities);
 
     // Seed PropertyPolicy
     const propertyPolicies = createdListings.flatMap(listing => {
@@ -321,7 +321,7 @@ async function seedPropertyModels() {
       }));
     });
 
-    await sequelize.PropertyPolicy.bulkCreate(propertyPolicies);
+    await db.PropertyPolicy.bulkCreate(propertyPolicies);
 
     console.log('Property models seeded successfully');
   } catch (error) {
@@ -333,7 +333,7 @@ async function seedPropertyModels() {
 // seedPropertyModels()
 async function logSeededListings() {
   try {
-    const listings = await sequelize.Listings.scope('all').findAll({ raw: true })
+    const listings = await db.Listing.scope('all').findAll({ raw: true })
     
     console.log(`✅ Seeded Listings Count: ${listings.length}`);
     

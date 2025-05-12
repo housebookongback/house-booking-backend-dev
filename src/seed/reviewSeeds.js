@@ -1,19 +1,19 @@
 const { faker } = require('@faker-js/faker');
 const review = require('../models/review');
-const sequelize = require('../models').sequelize.models;
+const db = require('../models')
 
 async function seedReviewModels() {
   try {
     // Clean existing data
-    await sequelize.ReviewReport.destroy({ where: {} });
-    await sequelize.ReviewResponse.destroy({ where: {} });
-    await sequelize.Review.destroy({ where: {} });
+    await db.ReviewReport.destroy({ where: {} });
+    await db.ReviewResponse.destroy({ where: {} });
+    await db.Review.destroy({ where: {} });
 
     // Get bookings to ensure valid relationships
-    const bookings = await sequelize.Booking.findAll({ 
+    const bookings = await db.Booking.findAll({ 
       include: [
-        { model: sequelize.User, as: 'guest' },
-        { model: sequelize.User, as: 'host' }
+        { model: db.User, as: 'guest' },
+        { model: db.User, as: 'host' }
       ]
     });
 
@@ -22,12 +22,12 @@ async function seedReviewModels() {
     }
 
     // Get moderators for review reports
-    const moderators = await sequelize.User.findAll({
+    const moderators = await db.User.findAll({
       include: [{
-        model: sequelize.Role,
+        model: db.Role,
         as: 'roles',
         where: { name: 'admin' },
-        through: sequelize.UserRoles
+        through: db.UserRoles
       }]
     });
 
@@ -64,7 +64,7 @@ async function seedReviewModels() {
       });
     }
 
-    const createdReviews = await sequelize.Review.bulkCreate(reviews);
+    const createdReviews = await db.Review.bulkCreate(reviews);
 
     // Seed ReviewResponses
     const responses = createdReviews
@@ -81,7 +81,7 @@ async function seedReviewModels() {
         updatedAt: new Date()
       }));
 
-    await sequelize.ReviewResponse.bulkCreate(responses);
+    await db.ReviewResponse.bulkCreate(responses);
 
     // Seed ReviewReports
     const reports = createdReviews
@@ -109,7 +109,7 @@ async function seedReviewModels() {
         updatedAt: new Date()
       }));
 
-    await sequelize.ReviewReport.bulkCreate(reports);
+    await db.ReviewReport.bulkCreate(reports);
 
     console.log('Review models seeded successfully');
   } catch (error) {

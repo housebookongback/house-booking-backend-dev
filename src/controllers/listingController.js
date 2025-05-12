@@ -21,87 +21,67 @@
 
 const db = require('../models');
 const PropertyType = db.PropertyType;
-const Listing = db.Listing;
+const Listing = db.Listing;  // This is already defined
 const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
 const { Op } = require('sequelize');
-
+console.log("db.Photo",db
+)
 const listingController = {
-    // Public routes
+    
     getAllListings: async (req, res) => {
         try {
             const {
-                page = 1,
-                limit = 10,
-                sortBy = 'createdAt',
-                sortOrder = 'DESC',
-                categoryId,
-                locationId,
-                minPrice,
-                maxPrice,
-                minRating,
-                instantBookable
+              sortBy = 'createdAt',
+              order = 'DESC',
+              minPrice,
+              maxPrice,
+              locationId,
+              propertyTypeId,
+              roomTypeId,
+              categoryId,
+              instantBookable,
+              minRating
             } = req.query;
 
-            // Build query options
-            const queryOptions = {
-                where: {
-                    status: 'published',
-                    isActive: true
-                },
-                include: [
-                    {
-                        model: db.Photo,
-                        as: 'photos',
-                        where: { isCover: true },
-                        required: false
-                    },
-                    {
-                        model: db.Location,
-                        as: 'locationDetails',
-                        attributes: ['id', 'name', 'slug']
-                    },
-                    {
-                        model: db.Category,
-                        as: 'category',
-                        attributes: ['id', 'name', 'slug'],
-                        required: false
-                    }
-                ],
-                order: [[sortBy, sortOrder]],
-                limit: parseInt(limit),
-                offset: (parseInt(page) - 1) * parseInt(limit)
+            const filters = {
+                status: 'published',  // Add this to ensure only published listings are returned
+                isActive: true       // Add this to ensure only active listings are returned
             };
 
-            // Add filters if provided
-            if (categoryId) queryOptions.where.categoryId = categoryId;
-            if (locationId) queryOptions.where.locationId = locationId;
-            if (minPrice) queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
-            if (maxPrice) queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.lte]: maxPrice };
-            if (minRating) queryOptions.where.averageRating = { [Op.gte]: minRating };
-            if (instantBookable) queryOptions.where.instantBookable = instantBookable === 'true';
+            // if (minPrice) filters.pricePerNight = { [Op.gte]: parseFloat(minPrice) };
+            // if (maxPrice) {
+            //     filters.pricePerNight = {
+            //         ...(filters.pricePerNight || {}),
+            //         [Op.lte]: parseFloat(maxPrice)
+            //     };
+            // }
+            // if (locationId) filters.locationId = parseInt(locationId);
+            // if (propertyTypeId) filters.propertyTypeId = parseInt(propertyTypeId);
+            // if (roomTypeId) filters.roomTypeId = parseInt(roomTypeId);
+            // if (categoryId) filters.categoryId = parseInt(categoryId);
+            // if (instantBookable) filters.instantBookable = instantBookable === 'true';
+            // if (minRating) filters.averageRating = { [Op.gte]: parseFloat(minRating) };
 
-            // Get listings and total count
-            const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
 
-            res.json({
+            // Change db.Listings to db.Listing
+            const listings = await db.Listing.findAll({
+            });
+
+            res.status(200).json({
                 success: true,
                 data: {
-                    listings,
-                    pagination: {
-                        total: count,
-                        page: parseInt(page),
-                        limit: parseInt(limit),
-                        totalPages: Math.ceil(count / parseInt(limit))
-                    }
+                    total: listings.count,
+                    listings: listings
                 }
             });
         } catch (error) {
             console.error('Error fetching listings:', error);
             res.status(500).json({
                 success: false,
-                error: 'Failed to fetch listings'
+                error: 'Failed to fetch listings',
+                message: error.message
             });
         }
     },
@@ -189,14 +169,13 @@ const listingController = {
                 });
             }
 
-            // Create the draft listing
+            // Create the draft listing with proper stepStatus
             const listing = await Listing.create({
                 title,
                 description,
                 propertyTypeId,
                 hostId: req.user.id,
                 status: 'draft',
-                step: 1,
                 stepStatus: {
                     basicInfo: true,
                     location: false,
@@ -206,7 +185,13 @@ const listingController = {
                     rules: false,
                     calendar: false
                 },
-                isActive: true
+                isActive: true,
+                defaultAvailability: true,
+                checkInDays: [0,1,2,3,4,5,6],
+                checkOutDays: [0,1,2,3,4,5,6],
+                minimumNights: 1,
+                maximumNights: 1,
+                cancellationPolicy: 'moderate'
             });
 
             res.status(201).json({
@@ -249,29 +234,11 @@ const listingController = {
         const { listingId } = req.params;
         const { address, coordinates } = req.body;
 
-        // 1) Payload validation
-        if (typeof address !== 'string' || !address.trim()) {
-            return res.status(400).json({
-                success: false,
-                error: '`address` must be a non-empty string'
-            });
-        }
-        if (
-            typeof coordinates !== 'object' ||
-            typeof coordinates.lat !== 'number' ||
-            typeof coordinates.lng !== 'number'
-        ) {
-            return res.status(400).json({
-                success: false,
-                error: '`coordinates` must be an object with numeric `lat` and `lng`'
-            });
-        }
-
         try {
-            // 2) Fetch & authorize the Draft
             const listing = await Listing.findOne({
                 where: { id: listingId, hostId: req.user.id, status: 'draft' }
             });
+
             if (!listing) {
                 return res.status(404).json({
                     success: false,
@@ -279,45 +246,35 @@ const listingController = {
                 });
             }
 
-            // 3) Atomic update with location creation
-            await db.sequelize.transaction(async (t) => {
-                             // (Optional) Create new Location record if you still need it
-                               const location = await db.Location.create({
-                                    name: address,
-                                   description: `Location for listing ${listing.title}`,
-                                    isActive: true
-                                }, { transaction: t });
-                
-                                // Build the GeoJSON point your Listing model expects
-                                const locationPoint = {
-                                    type: 'Point',
-                                    coordinates: [coordinates.lng, coordinates.lat]
-                                };
-                
-                                // Update listing with the geometry column, plus any other fields
-                               const currentStatus = listing.stepStatus || {};
-                                await listing.update({
-                                    locationId: location.id,     // if you still reference a Location table
-                                    address,
-                                    coordinates,                 // raw JSON fallback
-                                    location: locationPoint,     // ← this satisfies validLocation()
-                                    step: 2,
-                                    stepStatus: { ...currentStatus, location: true }
-                               }, { transaction: t });
-                            });
+            // Validate coordinates format
+            if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lng !== 'number') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid coordinates format'
+                });
+            }
 
-            // 4) Respond with fresh state
+            // Update listing with proper address and coordinates format
+            await listing.update({
+                address: {
+                    street: address.street,
+                    city: address.city,
+                    country: address.country
+                },
+                coordinates: {
+                    lat: coordinates.lat,
+                    lng: coordinates.lng
+                },
+                stepStatus: {
+                    ...listing.stepStatus,
+                    location: true
+                }
+            });
+
             return res.json({
                 success: true,
                 message: 'Location updated successfully',
-                data: {
-                    id: listing.id,
-                    locationId: listing.locationId,
-                    address,
-                    coordinates,
-                    step: 2,
-                    stepStatus: { ...listing.stepStatus, location: true }
-                }
+                data: listing
             });
         } catch (error) {
             console.error('Error updating location:', error);
@@ -977,4 +934,4 @@ updateCalendar: async (req, res) => {
     }
 };
 
-module.exports = listingController; 
+module.exports = listingController;

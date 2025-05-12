@@ -1,18 +1,18 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
+const db= require('../models')
 
 async function seedCommunicationModels() {
   try {
     // Clean existing data
-    await sequelize.MessageAttachment.destroy({ where: {} });
-    await sequelize.Message.destroy({ where: {} });
-    await sequelize.ConversationParticipant.destroy({ where: {} });
-    await sequelize.Conversation.destroy({ where: {} });
-    await sequelize.Notification.destroy({ where: {} });
+    await db.MessageAttachment.destroy({ where: {} });
+    await db.Message.destroy({ where: {} });
+    await db.ConversationParticipant.destroy({ where: {} });
+    await db.Conversation.destroy({ where: {} });
+    await db.Notification.destroy({ where: {} });
 
     // Get existing users and listings
-    const users = await sequelize.User.findAll();
-    const listings = await sequelize.Listings.scope('all').findAll({ raw: true });
+    const users = await db.User.findAll();
+    const listings = await db.Listing.scope('all').findAll({ raw: true });
 
     if (!users.length) {
       throw new Error('No users found. Please seed users first.');
@@ -36,7 +36,7 @@ async function seedCommunicationModels() {
       };
     });
 
-    const createdConversations = await sequelize.Conversation.bulkCreate(conversations);
+    const createdConversations = await db.Conversation.bulkCreate(conversations);
 
     // Seed ConversationParticipants
     const conversationParticipants = createdConversations.flatMap(conv => {
@@ -65,7 +65,7 @@ async function seedCommunicationModels() {
       ];
     });
 
-    await sequelize.ConversationParticipant.bulkCreate(conversationParticipants);
+    await db.ConversationParticipant.bulkCreate(conversationParticipants);
 
     // Seed Messages
     const messages = createdConversations.flatMap(conv => {
@@ -83,7 +83,7 @@ async function seedCommunicationModels() {
       }));
     });
 
-    const createdMessages = await sequelize.Message.bulkCreate(messages);
+    const createdMessages = await db.Message.bulkCreate(messages);
 
     // Seed MessageAttachments
     const messageAttachments = createdMessages
@@ -111,7 +111,7 @@ async function seedCommunicationModels() {
         };
       });
 
-    await sequelize.MessageAttachment.bulkCreate(messageAttachments);
+    await db.MessageAttachment.bulkCreate(messageAttachments);
 
     // Seed Notifications
     const notifications = Array.from({ length: 20 }).map(() => ({
@@ -128,7 +128,7 @@ async function seedCommunicationModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.Notification.bulkCreate(notifications);
+    await db.Notification.bulkCreate(notifications);
 
     console.log('Communication models seeded successfully');
   } catch (error) {
