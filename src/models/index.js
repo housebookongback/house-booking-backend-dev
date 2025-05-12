@@ -188,8 +188,10 @@ db.init = async (alter = false) => {
     }
 };
 
-module.exports = {db, sequelize};  
-/**
+
+
+module.exports = db;  
+
  * First, initialize Sequelize (if you haven't already):
 npm run db:init
 Then run your migrations:

@@ -344,6 +344,7 @@ module.exports = (sequelize, DataTypes) => {
     Photo.associate = (models) => {
         Photo.belongsTo(models.Listing, { foreignKey: 'listingId', as: 'listing' });
     };
+    
 
     return Photo;
 };
