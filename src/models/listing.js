@@ -14,7 +14,7 @@
 const { Op, literal } = require('sequelize');
 
 module.exports = (sequelize, DataTypes) => {
-    const Listing = sequelize.define('Listing', {
+    const Listings = sequelize.define('Listings', {
       id: {
         type: DataTypes.INTEGER,
         primaryKey: true,
@@ -287,7 +287,7 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: [0,1,2,3,4,5,6]
       },
     }, {
-      tableName: 'Listings',
+      tableName: 'Listings', // Ensure the table name matches 'Listings'
       timestamps: true,
       paranoid: true,
       defaultScope: {
@@ -355,18 +355,18 @@ module.exports = (sequelize, DataTypes) => {
     });
 
       // Generate unique slug before validation
-  Listing.prototype.generateSlug = async function() {
+  Listings.prototype.generateSlug = async function() {
     const base = this.title.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'');
     let slug = base, count = 1;
-    while (await Listing.findOne({ where:{ slug }})) slug = `${base}-${count++}`;
+    while (await Listings.findOne({ where:{ slug }})) slug = `${base}-${count++}`;
     return slug;
   };
-  Listing.addHook('beforeValidate', async listing => {
+  Listings.addHook('beforeValidate', async listing => {
     if (!listing.slug && listing.title) listing.slug = await listing.generateSlug();
   });
 
  // After publish, seed calendar
-  Listing.addHook('afterUpdate', async listing => {
+  Listings.addHook('afterUpdate', async listing => {
     if (listing.changed('status') && listing.status === 'published') {
       const days=365, today=new Date(), batch=[];
       for(let i=0;i<days;i++){const date=new Date(today);date.setDate(date.getDate() + i);batch.push({
@@ -383,15 +383,15 @@ module.exports = (sequelize, DataTypes) => {
     }
   });
     // Class Methods
-    Listing.findByHost = function(hostId) {
+    Listings.findByHost = function(hostId) {
       return this.scope('byHost', hostId).findAll();
     };
   
-    Listing.findWithinRadius = function(lat, lng, radius) {
+    Listings.findWithinRadius = function(lat, lng, radius) {
       return this.scope('withinRadius', lat, lng, radius).findAll();
     };
   
-    Listing.getTopRated = function(limit = 10) {
+    Listings.getTopRated = function(limit = 10) {
       return this.scope('published')
         .findAll({
           order: [['averageRating', 'DESC']],
@@ -400,19 +400,19 @@ module.exports = (sequelize, DataTypes) => {
     };
   
     // Instance Methods
-    Listing.prototype.publish = function() {
+    Listings.prototype.publish = function() {
       return this.update({ status: 'published' });
     };
   
-    Listing.prototype.archive = function() {
+    Listings.prototype.archive = function() {
       return this.update({ status: 'archived' });
     };
   
-    Listing.prototype.incrementViews = function() {
+    Listings.prototype.incrementViews = function() {
       return this.increment('views');
     };
   
-    Listing.prototype.updateRating = async function(newRating) {
+    Listings.prototype.updateRating = async function(newRating) {
       const oldRating = this.averageRating || 0;
       const oldCount = this.reviewCount;
       const newCount = oldCount + 1;
@@ -425,21 +425,21 @@ module.exports = (sequelize, DataTypes) => {
     };
   
     // Associations
-    Listing.associate = (models) => {
+    Listings.associate = (models) => {
       // Host
-      Listing.belongsTo(models.User, { foreignKey: 'hostId', as: 'host' });
+      Listings.belongsTo(models.User, { foreignKey: 'hostId', as: 'host' });
   
       // Lookup tables
-      Listing.belongsTo(models.PropertyType, { foreignKey: 'propertyTypeId', as: 'propertyType' });
-      Listing.belongsTo(models.RoomType,     { foreignKey: 'roomTypeId',     as: 'roomType'     });
-      Listing.belongsTo(models.Category,     { foreignKey: 'categoryId',     as: 'category'     });
-      Listing.belongsTo(models.Location,     { foreignKey: 'locationId',     as: 'locationDetails' });
+      Listings.belongsTo(models.PropertyType, { foreignKey: 'propertyTypeId', as: 'propertyType' });
+      Listings.belongsTo(models.RoomType,     { foreignKey: 'roomTypeId',     as: 'roomType'     });
+      Listings.belongsTo(models.Category,     { foreignKey: 'categoryId',     as: 'category'     });
+      Listings.belongsTo(models.Location,     { foreignKey: 'locationId',     as: 'locationDetails' });
   
       // Photos
-      Listing.hasMany(models.Photo, { foreignKey: 'listingId', as: 'photos' });
+      Listings.hasMany(models.Photo, { foreignKey: 'listingId', as: 'photos' });
   
       // Amenities
-      Listing.belongsToMany(models.Amenity, {
+      Listings.belongsToMany(models.Amenity, {
         through: models.ListingAmenities,
         as: 'amenities',
         foreignKey: 'listingId',
@@ -447,23 +447,23 @@ module.exports = (sequelize, DataTypes) => {
       });
   
       // Availability & pricing
-      Listing.hasMany(models.PropertyAvailability, { foreignKey: 'listingId', as: 'availabilities' });
-      Listing.hasMany(models.PriceRule,          { foreignKey: 'listingId', as: 'priceRules' });
-      Listing.hasMany(models.SeasonalPricing,    { foreignKey: 'listingId', as: 'seasonalPricing' });
+      Listings.hasMany(models.PropertyAvailability, { foreignKey: 'listingId', as: 'availabilities' });
+      Listings.hasMany(models.PriceRule,          { foreignKey: 'listingId', as: 'priceRules' });
+      Listings.hasMany(models.SeasonalPricing,    { foreignKey: 'listingId', as: 'seasonalPricing' });
   
       // Transactions & feedback
-      Listing.hasMany(models.Booking,           { foreignKey: 'listingId', as: 'bookings' });
-      Listing.hasMany(models.BookingCalendar,   { foreignKey: 'listingId', as: 'calendar' });
-      Listing.hasMany(models.Review,            { foreignKey: 'listingId', as: 'reviews' });
+      Listings.hasMany(models.Booking,           { foreignKey: 'listingId', as: 'bookings' });
+      Listings.hasMany(models.BookingCalendar,   { foreignKey: 'listingId', as: 'calendar' });
+      Listings.hasMany(models.Review,            { foreignKey: 'listingId', as: 'reviews' });
   
       // Policies & rules
-      Listing.hasMany(models.PropertyRule,      { foreignKey: 'listingId', as: 'propertyRules' });
-      Listing.hasMany(models.PropertyPolicy,    { foreignKey: 'listingId', as: 'propertyPolicies' });
+      Listings.hasMany(models.PropertyRule,      { foreignKey: 'listingId', as: 'propertyRules' });
+      Listings.hasMany(models.PropertyPolicy,    { foreignKey: 'listingId', as: 'propertyPolicies' });
   
       // Reports
-      Listing.hasMany(models.Report,            { foreignKey: 'listingId', as: 'reports' });
+      Listings.hasMany(models.Report,            { foreignKey: 'listingId', as: 'reports' });
     };
   
-    return Listing;
+    return Listings;
   };
   
