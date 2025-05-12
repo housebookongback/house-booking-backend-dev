@@ -134,18 +134,27 @@ module.exports = (sequelize, DataTypes) => {
             { fields: ['tags'], using: 'GIN' }
         ],
         validate: {
-            // async validListing() {
-            //     const listing = await sequelize.models.Listing.findByPk(this.listingId);
-            //     if (!listing) throw new Error('Invalid listing');
-            // },
             async validListing() {
-                       // bypass Listing's default scope so drafts (and anything else) are found
-                      const ListingModel = sequelize.models.Listing;
-                       const listing = await ListingModel.scope('all').findByPk(this.listingId);
-                       if (!listing) {
-                           throw new Error('Invalid listing');
-                       }
-                   },
+                try {
+                    if (!this.listingId) {
+                        throw new Error('ListingId is required');
+                    }
+                    // Use models directly from sequelize
+                    const { Listings } = sequelize.models;
+                    if (!Listings) {
+                        throw new Error('Listings model not found');
+                    }
+                    const listing = await Listings.unscoped().findByPk(this.listingId);
+                    if (!listing) {
+                        throw new Error(`Listing with id ${this.listingId} not found`);
+                    }
+                } catch (error) {
+                    if (error.message.includes('Listings model not found')) {
+                        console.log('Available models:', Object.keys(sequelize.models));
+                    }
+                    throw new Error(`Listing validation failed: ${error.message}`);
+                }
+            },
             validTags() {
                 if (this.tags && !Array.isArray(this.tags)) {
                     throw new Error('Tags must be an array');

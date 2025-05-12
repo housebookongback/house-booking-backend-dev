@@ -1,22 +1,22 @@
 {
   "development": {
     "username": "postgres",
-    "password": "postgres",
-    "database": "HouseBookingTest",
+    "password": "root",
+    "database": "housebooking1",
     "host": "localhost",
     "dialect": "postgres"
   },
   "test": {
     "username": "postgres",
-    "password": "postgres",
-    "database": "HouseBookingTest",
+    "password": "root",
+    "database": "housebooking1",
     "host": "localhost",
     "dialect": "postgres"
   },
   "production": {
     "username": "postgres",
-    "password": "postgres",
-    "database": "HouseBookingTest",
+    "password": "root",
+    "database": "housebooking1",
     "host": "localhost",
     "dialect": "postgres"
   }
