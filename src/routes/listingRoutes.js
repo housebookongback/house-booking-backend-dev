@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const listingController = require('../controllers/listingController');
 const { authenticate } = require('../middleware/authMiddleware');
-const { uploadSingle } = require('../middleware/upload');
+const { uploadMultiple } = require('../middleware/upload');
 
 // Step 1: Basic Information
 router.get('/property-types', listingController.getPropertyTypes);
@@ -18,7 +18,7 @@ router.patch('/:listingId/details', authenticate, listingController.updateDetail
 router.patch('/:listingId/pricing', authenticate, listingController.updatePricing);
 
 // Step 5: Photos
-router.patch('/:listingId/photos', authenticate, uploadSingle, listingController.updatePhotos);
+router.patch('/:listingId/photos', authenticate, uploadMultiple, listingController.updatePhotos);
 
 // Step 6: Rules
 router.patch('/:listingId/rules', authenticate, listingController.updateRules);

@@ -7,7 +7,8 @@ const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
 const db      = require('./models'); // Import Sequelize models
-const { uploadSingle } = require('./middleware/upload');
+//const { uploadSingle } = require('./middleware/upload');
+const { uploadMultiple } = require('./middleware/upload');
 
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
@@ -50,7 +51,7 @@ app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 
 // Test upload route
-app.patch('/test-upload', uploadSingle, (req, res) => {
+app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.file:', req.file);
   console.log('⚡ req.body:', req.body);
   return res.json({ received: Boolean(req.file), file: req.file });
