@@ -1,6 +1,6 @@
+
 const { Sequelize, DataTypes } = require('sequelize');
 const config = require('../config/config');
-
 /* ---------- Sequelize instance ---------- */
 const sequelize = new Sequelize(
     process.env.DATABASE_NAME,      // Database name from .env

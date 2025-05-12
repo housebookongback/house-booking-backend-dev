@@ -10,7 +10,7 @@ module.exports = (sequelize, DataTypes) => {
         listingId: {
             type: DataTypes.INTEGER,
             allowNull: false,
-            references: { model: 'Listings', key: 'id' },
+            references: { model: 'Listings', key: 'id' }, // Changed from 'Listing' to 'Listings'
             onDelete: 'CASCADE',
             onUpdate: 'CASCADE'
         },
@@ -169,4 +169,4 @@ module.exports = (sequelize, DataTypes) => {
     };
 
     return SeasonalPricing;
-}; 
+};
