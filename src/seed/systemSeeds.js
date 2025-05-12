@@ -1,13 +1,13 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
+const db = require('../models');
 
 async function seedSystemModels() {
   try {
     // Clean existing data
-    await sequelize.SystemSetting.destroy({ where: {} });
-    await sequelize.Maintenance.destroy({ where: {} });
-    await sequelize.Report.destroy({ where: {} });
-    await sequelize.Photo.destroy({ where: {} });
+    await db.SystemSetting.destroy({ where: {} });
+    await db.Maintenance.destroy({ where: {} });
+    await db.Report.destroy({ where: {} });
+    await db.Photo.destroy({ where: {} });
 
     // Seed SystemSettings avec des clés uniques
     const systemSettings = [
@@ -39,12 +39,12 @@ async function seedSystemModels() {
       }
     ];
 
-    await sequelize.SystemSetting.bulkCreate(systemSettings, { ignoreDuplicates: true });
+    await db.SystemSetting.bulkCreate(systemSettings, { ignoreDuplicates: true });
 
     // Get admin user for maintenance records
-    const adminUser = await sequelize.User.findOne({
+    const adminUser = await db.User.findOne({
       include: [{
-        model: sequelize.Role,
+        model: db.Role,
         as: 'roles',
         where: { name: 'admin' }
       }]
@@ -76,11 +76,11 @@ async function seedSystemModels() {
       };
     });
 
-    await sequelize.Maintenance.bulkCreate(maintenanceRecords);
+    await db.Maintenance.bulkCreate(maintenanceRecords);
 
     // Get users and listings for reports
-    const users = await sequelize.User.findAll();
-    const listings = await sequelize.Listings.scope('all').findAll({ raw: true });
+    const users = await db.User.findAll();
+    const listings = await db.Listing.scope('all').findAll({ raw: true });
 
     if (!users.length || !listings.length) {
       throw new Error('No users or listings found. Please seed users and listings first.');
@@ -116,7 +116,7 @@ async function seedSystemModels() {
       };
     });
 
-    await sequelize.Report.bulkCreate(reports);
+    await db.Report.bulkCreate(reports);
 
     // Use the existing listings variable instead of declaring it again
     if (!listings.length) {
@@ -173,7 +173,7 @@ async function seedSystemModels() {
       }
     }
 
-    await sequelize.Photo.bulkCreate(photos);
+    await db.Photo.bulkCreate(photos);
 
     console.log('System models and photos seeded successfully');
   } catch (error) {

@@ -1,25 +1,23 @@
 const { faker } = require('@faker-js/faker');
-const { sequelize } = require('../models');
-const models = sequelize.models;
+const db = require('../models');
 
 async function seedHostModels() {
-  const transaction = await sequelize.transaction();
+  // const transaction = await sequelize.transaction();
   
   try {
     // Clean existing data
-    await models.HostProfile.destroy({ where: {}, force: true, transaction });
-    await models.HostEarnings.destroy({ where: {}, force: true, transaction });
-    await models.HostVerification.destroy({ where: {}, force: true, transaction });
+    await db.HostProfile.destroy({ where: {}, force: true});
+    await db.HostEarnings.destroy({ where: {}, force: true});
+    await db.HostVerification.destroy({ where: {}, force: true});
 
     // Get users with host role
-    const hostUsers = await models.User.findAll({
+    const hostUsers = await db.User.findAll({
       include: [{
-        model: models.Role,
+        model: db.Role,
         as: 'roles',
         where: { name: 'host' },
-        through: models.UserRoles
-      }],
-      transaction
+        through: db.UserRoles
+      }]
     });
 
     if (hostUsers.length === 0) {
@@ -29,10 +27,9 @@ async function seedHostModels() {
 
     // Create host profiles with uniqueness check
     const hostProfiles = await Promise.all(hostUsers.map(async user => {
-      const existingProfile = await models.HostProfile.findOne({
+      const existingProfile = await db.HostProfile.findOne({
         where: { userId: user.id },
-        paranoid: false,
-        transaction
+        paranoid: false
       });
 
       if (!existingProfile) {
@@ -65,8 +62,7 @@ async function seedHostModels() {
     }));
 
     const validHostProfiles = hostProfiles.filter(profile => profile !== null);
-    const createdHostProfiles = await models.HostProfile.bulkCreate(validHostProfiles, {
-      transaction,
+    const createdHostProfiles = await db.HostProfile.bulkCreate(validHostProfiles, {
       returning: true
     });
 
@@ -110,8 +106,7 @@ async function seedHostModels() {
     }
 
     if (hostVerifications.length > 0) {
-      await models.HostVerification.bulkCreate(hostVerifications, {
-        transaction,
+      await db.HostVerification.bulkCreate(hostVerifications, {
         validate: false
       });
     }
@@ -120,7 +115,7 @@ async function seedHostModels() {
     const hostEarnings = [];
     for (const hostProfile of createdHostProfiles) {
       // Créer d'abord un listing factice pour chaque hôte
-      const dummyListing = await models.Listings.create({
+      const dummyListing = await db.Listing.create({
         hostId: hostProfile.userId,
         title: faker.lorem.words(3),
         description: faker.lorem.paragraph(),
@@ -146,10 +141,10 @@ async function seedHostModels() {
         checkOutDays: [0,1,2,3,4,5,6],
         createdAt: new Date(),
         updatedAt: new Date()
-      }, { transaction });
+      });
 
       // Créer une réservation factice avec le listing créé
-      const dummyBooking = await models.Booking.create({
+      const dummyBooking = await db.Booking.create({
         listingId: dummyListing.id,
         guestId: hostProfile.userId, // Utiliser l'ID de l'hôte comme invité pour simplifier
         hostId: hostProfile.userId,
@@ -162,7 +157,7 @@ async function seedHostModels() {
         isActive: true,
         createdAt: new Date(),
         updatedAt: new Date()
-      }, { transaction });
+      });
 
       const numEarnings = faker.number.int({ min: 2, max: 5 });
       
@@ -194,27 +189,26 @@ async function seedHostModels() {
     }
 
     if (hostEarnings.length > 0) {
-      await models.HostEarnings.bulkCreate(hostEarnings, {
-        transaction,
+      await db.HostEarnings.bulkCreate(hostEarnings, {
         validate: false
       });
     }
 
-    await transaction.commit();
-    console.log('Host models, verifications, and earnings seeded successfully');
+    // await transaction.commit();
+    console.log('Host db, verifications, and earnings seeded successfully');
   } catch (error) {
-    await transaction.rollback();
-    console.error('Error seeding host models:', error);
+    // await transaction.rollback();
+    console.error('Error seeding host db:', error);
     throw error;
   }
 }
 
 async function getAllHostProfiles() {
   try {
-    const hostProfiles = await models.HostProfile.findAll({
+    const hostProfiles = await db.HostProfile.findAll({
       include: [
-        { model: models.HostVerification },
-        { model: models.HostEarnings }
+        { model: db.HostVerification },
+        { model: db.HostEarnings }
       ]
     });
     console.log('All Host Profiles:', JSON.stringify(hostProfiles, null, 2));

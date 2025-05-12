@@ -1,14 +1,14 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
+const db = require('../models')
 
 async function seedVerificationModels() {
   try {
     // Clean existing data
-    await sequelize.Document.destroy({ where: {} });
-    await sequelize.Verification.destroy({ where: {} });
+    await db.Document.destroy({ where: {} });
+    await db.Verification.destroy({ where: {} });
 
     // Récupérer les IDs des utilisateurs existants
-    const existingUsers = await sequelize.User.findAll({
+    const existingUsers = await db.User.findAll({
       attributes: ['id']
     });
     const userIds = existingUsers.map(user => user.id);
@@ -30,7 +30,7 @@ async function seedVerificationModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.Verification.bulkCreate(verifications);
+    await db.Verification.bulkCreate(verifications);
 
     // Seed Documents with required fileType
     const documents = Array.from({ length: 10 }).map(() => ({
@@ -46,7 +46,7 @@ async function seedVerificationModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.Document.bulkCreate(documents);
+    await db.Document.bulkCreate(documents);
 
     console.log('Verification models seeded successfully');
   } catch (error) {

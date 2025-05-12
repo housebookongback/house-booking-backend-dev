@@ -1,35 +1,33 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize;
-
+const db = require('../models');
+console.log("d ")
 async function seedBookingModels() {
-  const transaction = await sequelize.transaction();
+  // const transaction = await db.transaction();
   try {
     // Clean existing data
-    await sequelize.models.BookingCalendar.destroy({ where: {}, transaction });
-    await sequelize.models.BookingCancellation.destroy({ where: {}, transaction });
-    await sequelize.models.BookingChange.destroy({ where: {}, transaction });
-    await sequelize.models.BookingRequest.destroy({ where: {}, transaction });
-    await sequelize.models.Booking.destroy({ where: {}, transaction });
-    await sequelize.models.PriceRule.destroy({ where: {}, transaction });
-    await sequelize.models.SeasonalPricing.destroy({ where: {}, transaction });
+    await db.BookingCalendar.destroy({ where: {} });
+    await db.BookingCancellation.destroy({ where: {} });
+    await db.BookingChange.destroy({ where: {} });
+    await db.BookingRequest.destroy({ where: {} });
+    await db.Booking.destroy({ where: {} });
+    await db.PriceRule.destroy({ where: {} });
+    await db.SeasonalPricing.destroy({ where: {} });
 
     // Fetch existing listings, guests, and hosts
-    const listings = await sequelize.models.Listings.scope('all').findAll({ raw: true });
+    const listings = await db.Listing.scope('all').findAll({ raw: true });
     if (listings.length === 0) {
       throw new Error('No listings found. Please ensure listings are seeded before running booking seeds.');
     }
 
-    const guests = await sequelize.models.User.findAll({
-      include: [{ model: sequelize.models.GuestProfile, as: 'guestProfile', required: true }],
+    const guests = await db.User.findAll({
+      include: [{ model: db.GuestProfile, as: 'guestProfile', required: true }],
       attributes: ['id'],
       raw: true,
-      transaction
     });
 
-    const hosts = await sequelize.models.User.findAll({
-      include: [{ model: sequelize.models.HostProfile, as: 'hostProfile', required: false }],
+    const hosts = await db.User.findAll({
+      include: [{ model: db.HostProfile, as: 'hostProfile', required: false }],
       attributes: ['id'],
-      transaction
     });
     const listingIds = listings.map((l) => l.id);
     const guestIds = guests.map((g) => g.id);
@@ -51,7 +49,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await sequelize.models.PriceRule.bulkCreate(priceRules, { transaction });
+    await db.PriceRule.bulkCreate(priceRules);
 
     const seasonalPricing = Array.from({ length: 10 }).map(() => ({
       listingId: faker.helpers.arrayElement(listingIds),
@@ -64,7 +62,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await sequelize.models.SeasonalPricing.bulkCreate(seasonalPricing, { transaction });
+    await db.SeasonalPricing.bulkCreate(seasonalPricing);
 
     const bookings = [];
     for (let i = 0; i < 10; i++) {
@@ -89,7 +87,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       });
     }
-    const createdBookings = await sequelize.models.Booking.bulkCreate(bookings, { transaction });
+    const createdBookings = await db.Booking.bulkCreate(bookings);
 
     // Create booking requests
     const bookingRequests = createdBookings
@@ -113,7 +111,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await sequelize.models.BookingRequest.bulkCreate(bookingRequests, { transaction });
+    await db.BookingRequest.bulkCreate(bookingRequests);
 
     // Create booking changes
     const bookingChanges = createdBookings
@@ -145,7 +143,7 @@ async function seedBookingModels() {
         };
       });
 
-    await sequelize.models.BookingChange.bulkCreate(bookingChanges, { transaction });
+    await db.BookingChange.bulkCreate(bookingChanges);
 
     // Create booking cancellations
     const bookingCancellations = createdBookings
@@ -163,7 +161,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await sequelize.models.BookingCancellation.bulkCreate(bookingCancellations, { transaction });
+    await db.BookingCancellation.bulkCreate(bookingCancellations);
 
     // Create booking calendars for each listing
     const bookingCalendars = [];
@@ -194,12 +192,12 @@ async function seedBookingModels() {
       }
     }
 
-    await sequelize.models.BookingCalendar.bulkCreate(bookingCalendars, { transaction });
+    await db.BookingCalendar.bulkCreate(bookingCalendars);
 
-    await transaction.commit();
+    // await transaction.commit();
     console.log('Booking models seeded successfully');
   } catch (error) {
-    await transaction.rollback();
+    // await transaction.rollback();
     console.error('Error seeding booking models:', error);
     throw error;
   }

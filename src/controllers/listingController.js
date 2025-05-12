@@ -772,9 +772,11 @@ updateCalendar: async (req, res) => {
 
     // Final Step: Publish
     publishListing: async (req, res) => {
+        const { listingId } = req.params;
+        console.log("listingId", listingId)
+        console.log("req.user.id", req.user.id)
         try {
-            const { listingId } = req.params;
-
+            console.log("z;f, erf;",Listing)
             const listing = await Listing.findOne({
                 where: {
                     id: listingId,
@@ -782,7 +784,7 @@ updateCalendar: async (req, res) => {
                     status: 'draft'
                 }
             });
-
+            console.log("listing", listing)
             if (!listing) {
                 return res.status(404).json({
                     success: false,
@@ -978,4 +980,4 @@ updateCalendar: async (req, res) => {
     }
 };
 
-module.exports = listingController; 
+module.exports = listingController;

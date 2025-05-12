@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const models = require('../models');
+const db = require('../models');
 const { generateToken } = require('../middleware/jwtUtils');
 const { ValidationError } = require('sequelize');
 
@@ -12,7 +12,7 @@ const register = async (req, res) => {
         const { name, email, password, phone } = req.body;
 
         // Check if user already exists
-        const existingUser = await models.User.findOne({ where: { email } });
+        const existingUser = await db.User.findOne({ where: { email } });
         if (existingUser) {
             return res.status(400).json({ message: 'Email already registered' });
         }
@@ -22,7 +22,7 @@ const register = async (req, res) => {
         const passwordHash = await bcrypt.hash(password, salt);
 
         // Create user
-        const user = await models.User.create({
+        const user = await db.User.create({
             name,
             email,
             passwordHash,
@@ -83,7 +83,7 @@ const login = async (req, res) => {
         const { email, password } = req.body;
 
         // Find user
-        const user = await models.User.findOne({ where: { email } });
+        const user = await db.User.findOne({ where: { email } });
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -136,7 +136,7 @@ const verifyEmail = async (req, res) => {
     try {
         const { token } = req.params;
 
-        const user = await models.User.findOne({
+        const user = await db.User.findOne({
             where: {
                 emailVerificationToken: token,
                 emailVerifiedAt: null
@@ -168,7 +168,7 @@ const forgotPassword = async (req, res) => {
     try {
         const { email } = req.body;
 
-        const user = await models.User.findOne({ where: { email } });
+        const user = await db.User.findOne({ where: { email } });
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
@@ -194,7 +194,7 @@ const resetPassword = async (req, res) => {
     try {
         const { token, password } = req.body;
 
-        const user = await models.User.findOne({
+        const user = await db.User.findOne({
             where: {
                 passwordResetToken: token,
                 passwordResetExpires: { [Op.gt]: new Date() }
