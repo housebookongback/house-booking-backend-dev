@@ -11,9 +11,9 @@ router.post('/register', authenticate, hostController.register);
 router.get('/profile', authenticate, verifyHost, hostController.getProfile);
 router.put('/profile', authenticate, verifyHost, hostController.updateProfile);
 
-// Host verification (needs host verification)
-router.post('/verify', authenticate, verifyHost, hostController.submitVerification);
-router.get('/verification-status', authenticate, verifyHost, hostController.getVerificationStatus);
+// Host verification (only needs authentication)
+router.post('/verify', authenticate, hostController.submitVerification);
+router.get('/verification-status', authenticate, hostController.getVerificationStatus);
 
 // Notification preferences (needs host verification)
 router.put('/notifications', authenticate, verifyHost, hostController.updateNotificationPreferences);
