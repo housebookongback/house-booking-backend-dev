@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/authMiddleware');
+const verifyHost = require('../middleware/hostMiddleware');
 const bookingController = require('../controllers/bookingController');
 
 // Create a new booking request
@@ -13,10 +14,12 @@ router.patch('/request/:requestId/status', authenticate, bookingController.updat
 //router.get('/:id', authenticate, bookingController.getBookingDetails);
 
 // Update booking status (host only)
-//router.patch('/:id/status', authenticate, bookingController.updateBookingStatus);
+router.patch('/:id/status', authenticate, bookingController.updateBookingStatus);
 
-// Get host's bookings
-//router.get('/host/listings', authenticate, bookingController.getHostBookings);
+// Host-specific routes
+router.get('/host', authenticate, verifyHost, bookingController.getHostBookings);
+router.get('/host/:bookingId', authenticate, verifyHost, bookingController.getBookingDetails);
+router.get('/host/calendar', authenticate, verifyHost, bookingController.getHostCalendar);
 
 // Get guest's bookings
 //router.get('/guest/listings', authenticate, bookingController.getGuestBookings);
@@ -26,5 +29,8 @@ router.patch('/request/:requestId/status', authenticate, bookingController.updat
 
 // Get booking availability
 //router.get('/:listingId/availability', bookingController.checkAvailability);
+
+// Get calendar view
+//router.get('/calendar', authenticate, verifyHost, bookingController.getHostCalendar);
 
 module.exports = router; 
