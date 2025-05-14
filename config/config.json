@@ -1,0 +1,23 @@
+{
+  "development": {
+    "username": "postgres",
+    "password": "ann2arbor",
+    "database": "HouseBooking1",
+    "host": "localhost",
+    "dialect": "postgres"
+  },
+  "test": {
+    "username": "postgres",
+    "password": "ann2arbor",
+    "database": "HouseBooking1",
+    "host": "localhost",
+    "dialect": "postgres"
+  },
+  "production": {
+    "username": "postgres",
+    "password": "ann2arbor",
+    "database": "HouseBooking1",
+    "host": "localhost",
+    "dialect": "postgres"
+  }
+}

@@ -16,7 +16,13 @@ const { uploadMultiple } = require('./middleware/upload');
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
+<<<<<<< HEAD
 const verify  = require('./routes/VerificationCodeRoutes')
+=======
+const hostRoutes = require('./routes/hostRoutes');
+const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
+
+>>>>>>> 18c5049ee2567476122caef75cee27d3a7e1cd74
 const app = express();
 
 /* ───────────── Global middleware ───────────── */
@@ -48,7 +54,13 @@ db.init()
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
+<<<<<<< HEAD
 app.use("/api/verify", verify)
+=======
+app.use('/api/host', hostRoutes);
+app.use('/api/admin', adminRoutes); // Add admin routes
+
+>>>>>>> 18c5049ee2567476122caef75cee27d3a7e1cd74
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.file:', req.file);

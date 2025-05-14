@@ -258,7 +258,10 @@ module.exports = (sequelize, DataTypes) => {
         const hours = listing?.bookingRequestExpiration > 0 
             ? listing.bookingRequestExpiration 
             : 24;
-        return literal(`CURRENT_TIMESTAMP + INTERVAL '${hours} hours'`);
+        const expirationDate = new Date();
+        // Calculate future date by adding hours
+        expirationDate.setTime(expirationDate.getTime() + hours * 60 * 60 * 1000); 
+        return expirationDate; // Return a JS Date object
     };
 
     // Associations
