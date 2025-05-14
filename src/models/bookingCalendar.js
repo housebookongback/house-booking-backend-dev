@@ -70,7 +70,7 @@ module.exports = (sequelize, DataTypes) => {
         ],
         validate: {
             async validListing() {
-                const listing = await sequelize.models.Listing.findByPk(this.listingId);
+                const listing = await sequelize.models.Listings.findByPk(this.listingId);
                 if (!listing) throw new Error('Invalid listing');
             },
             validStayLimits() {
@@ -202,4 +202,4 @@ module.exports = (sequelize, DataTypes) => {
     };
 
     return BookingCalendar;
-}; 
+};

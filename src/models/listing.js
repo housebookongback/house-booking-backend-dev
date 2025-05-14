@@ -2,6 +2,7 @@
 /**
  * ✅ Final Step Reminder: Publishing a Listing
  * ------------------------------------------------
+ * 
  * 🔹 Once all steps are completed (basicInfo → calendar)
  *    - Ensure stepStatus flags are all true
  * 🔹 Call: POST /api/listings/:listingId/publish

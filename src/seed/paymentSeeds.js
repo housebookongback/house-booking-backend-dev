@@ -1,14 +1,14 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
+const db = require('../models')
 
 async function seedPaymentModels() {
   try {
     // Clean existing data
-    await sequelize.Payment.destroy({ where: {} });
-    await sequelize.PayoutAccount.destroy({ where: {} });
+    await db.Payment.destroy({ where: {} });
+    await db.PayoutAccount.destroy({ where: {} });
 
     // Get some bookings to associate payments with
-    const bookings = await sequelize.Booking.findAll({ limit: 10 });
+    const bookings = await db.Booking.findAll({ limit: 10 });
     
     if (!bookings.length) {
       console.log('No bookings found. Please seed bookings first.');
@@ -16,7 +16,7 @@ async function seedPaymentModels() {
     }
 
     // Get host profiles for payout accounts
-    const hostProfiles = await sequelize.HostProfile.findAll();
+    const hostProfiles = await db.HostProfile.findAll();
     
     if (!hostProfiles.length) {
       console.log('No host profiles found. Please seed hosts first.');
@@ -50,7 +50,7 @@ async function seedPaymentModels() {
       };
     });
 
-    await sequelize.Payment.bulkCreate(payments);
+    await db.Payment.bulkCreate(payments);
 
     // Seed PayoutAccounts
     const payoutAccounts = hostProfiles.map(host => {
@@ -106,7 +106,7 @@ async function seedPaymentModels() {
       };
     });
 
-    await sequelize.PayoutAccount.bulkCreate(payoutAccounts);
+    await db.PayoutAccount.bulkCreate(payoutAccounts);
 
     console.log('Payment and PayoutAccount models seeded successfully');
   } catch (error) {

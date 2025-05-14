@@ -1,15 +1,15 @@
 const { faker } = require('@faker-js/faker');
 const bcrypt = require('bcryptjs');
-const sequelize  = require('../models').sequelize.models
+const db  = require('../models')
 
 async function seedCoreModels() {
   try {
-    // await sequelize.Maintenance.destroy({ where: {} });
-    // Clean existing data
-    await sequelize.UserRoles.destroy({   where: {},});
-    await sequelize.User.destroy({ where: {},      cascade: true,
+    // await db.Maintenance.destroy({ where: {} });
+    // Clean existing datadb
+    await db.UserRoles.destroy({   where: {},});
+    await db.User.destroy({ where: {},      cascade: true,
       individualHooks: true });
-    await sequelize.Role.destroy({ where: {} });
+    await db.Role.destroy({ where: {} });
 
     // Seed Roles
     const roles = ['user', 'host', 'admin'].map(roleName => ({
@@ -19,7 +19,7 @@ async function seedCoreModels() {
       updatedAt: new Date()
     }));
 
-    const createdRoles = await sequelize.Role.bulkCreate(roles);
+    const createdRoles = await db.Role.bulkCreate(roles);
 
     // Seed Users
     const users = Array.from({ length: 10 }).map(() => {
@@ -37,7 +37,7 @@ async function seedCoreModels() {
       };
     });
 
-    const createdUsers = await sequelize.User.bulkCreate(users);
+    const createdUsers = await db.User.bulkCreate(users);
 
     // Seed UserRoles
     const userRoles = createdUsers.map(user => ({
@@ -47,7 +47,7 @@ async function seedCoreModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.UserRoles.bulkCreate(userRoles);
+    await db.UserRoles.bulkCreate(userRoles);
 
     console.log('Core models seeded successfully');
   } catch (error) {

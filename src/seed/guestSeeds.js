@@ -1,18 +1,16 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize;
+const db = require('../models')
 
 async function seedGuestModels() {
-  const transaction = await sequelize.transaction(); // Start a transaction
   try {
     // Clean existing data within transaction
-    await sequelize.models.GuestVerification.destroy({ where: {}, transaction });
-    await sequelize.models.GuestPreferences.destroy({ where: {}, transaction });
-    await sequelize.models.GuestProfile.destroy({ where: {}, transaction });
+    await db.GuestVerification.destroy({ where: {} });
+    await db.GuestPreferences.destroy({ where: {} });
+    await db.GuestProfile.destroy({ where: {} });
 
     // Fetch existing user IDs
-    const existingUsers = await sequelize.models.User.findAll({
+    const existingUsers = await db.User.findAll({
       attributes: ['id'],
-      transaction,
     });
     const userIds = existingUsers.map((user) => user.id);
 
@@ -63,9 +61,9 @@ async function seedGuestModels() {
       };
     });
 
-    const createdGuestProfiles = await sequelize.models.GuestProfile.bulkCreate(
+    const createdGuestProfiles = await db.GuestProfile.bulkCreate(
       guestProfiles,
-      { transaction }
+
     );
 
     // Seed GuestPreferences
@@ -131,8 +129,7 @@ async function seedGuestModels() {
       updatedAt: new Date(),
     }));
 
-    await sequelize.models.GuestPreferences.bulkCreate(guestPreferences, {
-      transaction,
+    await db.GuestPreferences.bulkCreate(guestPreferences, {
     });
 
     // Seed GuestVerifications
@@ -147,16 +144,15 @@ async function seedGuestModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.models.GuestVerification.bulkCreate(guestVerifications, {
-      transaction,
+    await db.GuestVerification.bulkCreate(guestVerifications, {
     });
 
     // Commit the transaction
-    await transaction.commit();
+    // await transaction.commit();
     console.log('Guest models seeded successfully');
   } catch (error) {
     // Roll back the transaction on error
-    await transaction.rollback();
+    // await transaction.rollback();
     console.error('Error seeding guest models:', error);
     throw error;
   }

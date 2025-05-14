@@ -1,14 +1,14 @@
 const { faker } = require('@faker-js/faker');
-const sequelize = require('../models').sequelize.models;
+const db = require('../models');
 
 async function seedSearchModels() {
   try {
     // Clean existing data
-    await sequelize.SearchHistory.destroy({ where: {} });
-    await sequelize.SearchFilter.destroy({ where: {} });
+    await db.SearchHistory.destroy({ where: {} });
+    await db.SearchFilter.destroy({ where: {} });
 
     // Get valid users first
-    const users = await sequelize.User.findAll();
+    const users = await db.User.findAll();
     if (!users.length) {
       throw new Error('No users found. Please seed users first.');
     }
@@ -34,7 +34,7 @@ async function seedSearchModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.SearchFilter.bulkCreate(searchFilters);
+    await db.SearchFilter.bulkCreate(searchFilters);
 
     // Seed SearchHistory
     const searchHistory = Array.from({ length: 20 }).map(() => ({
@@ -55,7 +55,7 @@ async function seedSearchModels() {
       updatedAt: new Date()
     }));
 
-    await sequelize.SearchHistory.bulkCreate(searchHistory);
+    await db.SearchHistory.bulkCreate(searchHistory);
 
     console.log('Search models seeded successfully');
   } catch (error) {

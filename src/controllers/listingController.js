@@ -435,26 +435,21 @@ const listingController = {
 
     // Step 5: Photos
     updatePhotos: async (req, res) => {
-        const rawPath    = req.file.path;                   
-  const normalized = rawPath.split(path.sep).join('/'); 
-  const publicUrl  = `${req.protocol}://${req.get('host')}/${normalized}`;
+        const files = req.files;
+        if (!files || files.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No photos provided'
+            });
+        }
 
         try {
             console.log('Request body:', req.body);
-            console.log('Request file:', req.file);
             console.log('Request files:', req.files);
             console.log('Request headers:', req.headers);
 
             const { listingId } = req.params;
             const { isCover } = req.body;
-            const file = req.file;
-
-            if (!file) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'No photo file provided'
-                });
-            }
 
             const listing = await Listing.findOne({
                 where: {
@@ -471,16 +466,22 @@ const listingController = {
                 });
             }
 
-            // Create photo record
-            const photo = await Photo.create({
-                listingId: listing.id,
-                url:       publicUrl,
-                fileType:  file.mimetype,
-                fileSize:  file.size,
-                isCover:   isCover === 'true',
-                category:  'other',
-                displayOrder: 0
-              });
+            // Create photo records
+            const photos = await Promise.all(files.map(async (file, index) => {
+                const rawPath = file.path;
+                const normalized = rawPath.split(path.sep).join('/');
+                const publicUrl = `${req.protocol}://${req.get('host')}/${normalized}`;
+
+                return Photo.create({
+                    listingId: listing.id,
+                    url: publicUrl,
+                    fileType: file.mimetype,
+                    fileSize: file.size,
+                    isCover: index === 0, // First photo is cover
+                    category: 'other',
+                    displayOrder: index
+                });
+            }));
 
             // Update step status
             await listing.update({
@@ -493,23 +494,23 @@ const listingController = {
 
             res.json({
                 success: true,
-                message: 'Photo uploaded successfully',
+                message: 'Photos uploaded successfully',
                 data: {
                     id: listing.id,
                     step: listing.step,
                     stepStatus: listing.stepStatus,
-                    photo: {
+                    photos: photos.map(photo => ({
                         id: photo.id,
                         url: photo.url,
                         isCover: photo.isCover
-                    }
+                    }))
                 }
             });
         } catch (error) {
-            console.error('Error uploading photo:', error);
+            console.error('Error uploading photos:', error);
             res.status(500).json({
                 success: false,
-                error: 'Failed to upload photo'
+                error: 'Failed to upload photos'
             });
         }
     },
@@ -771,9 +772,11 @@ updateCalendar: async (req, res) => {
 
     // Final Step: Publish
     publishListing: async (req, res) => {
+        const { listingId } = req.params;
+        console.log("listingId", listingId)
+        console.log("req.user.id", req.user.id)
         try {
-            const { listingId } = req.params;
-
+            console.log("z;f, erf;",Listing)
             const listing = await Listing.findOne({
                 where: {
                     id: listingId,
@@ -781,7 +784,7 @@ updateCalendar: async (req, res) => {
                     status: 'draft'
                 }
             });
-
+            console.log("listing", listing)
             if (!listing) {
                 return res.status(404).json({
                     success: false,
@@ -977,4 +980,4 @@ updateCalendar: async (req, res) => {
     }
 };
 
-module.exports = listingController; 
+module.exports = listingController;
