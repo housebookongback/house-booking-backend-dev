@@ -6,7 +6,7 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-
+; // Import the verify middleware
 const db      = require('./models'); // Import Sequelize models
 //const { uploadSingle } = require('./middleware/upload');
 const { uploadMultiple } = require('./middleware/upload');
@@ -16,15 +16,12 @@ const { uploadMultiple } = require('./middleware/upload');
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
-
+const verify  = require('./routes/VerificationCodeRoutes')
 const app = express();
 
 /* ───────────── Global middleware ───────────── */
 app.use(helmet()); // Security headers
-app.use(cors({
-    origin: config.appUrl, // Allow requests from your frontend
-    credentials: true      // Allow cookies/sessions
-}));
+app.use(cors());
 app.use(morgan('dev')); // Logging
 app.use(express.json({ limit: '10kb' })); // Parse JSON bodies with size limit
 
@@ -51,7 +48,7 @@ db.init()
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
-
+app.use("/api/verify", verify)
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.file:', req.file);

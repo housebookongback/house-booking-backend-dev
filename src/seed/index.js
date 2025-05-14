@@ -1,4 +1,4 @@
-const { db, sequelize } = require('../models');
+const db = require('../models');
 
 // Import all seed files
 const coreSeeds = require('./coreSeeds');
@@ -16,7 +16,13 @@ const systemSeeds = require('./systemSeeds');
 
 async function seedAll() {
   try {
-    console.log('🌱 Starting database seeding...');
+    // First, authenticate and sync database
+    await db.sequelize.authenticate();
+    console.log('✅ Database connected successfully');
+
+    // Sync all tables in order
+    await db.init(true);
+    console.log('🌱 Database synchronized, starting seeding...');
 
     // Core models (Users, Roles)
     await coreSeeds();
@@ -69,15 +75,24 @@ async function seedAll() {
     console.log('✅ All seeding completed successfully!');
   } catch (error) {
     console.error('❌ Error during seeding:', error);
-    throw error;
+    throw error; // Re-throw the error to properly handle it
   } finally {
-    await sequelize.close();
+    // Close the database connection
+    await db.sequelize.close();
   }
 }
 
-// Run seeder if called directly
+// Only run seedAll if this file is being run directly
 if (require.main === module) {
-  seedAll();
+  seedAll()
+    .then(() => {
+      console.log('🎉 Seeding process completed!');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('❌ Seeding failed:', error);
+      process.exit(1);
+    });
 }
 
 module.exports = seedAll;

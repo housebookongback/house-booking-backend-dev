@@ -1,14 +1,14 @@
-require('dotenv').config({ path: '../../.env' })
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') })
 const { Sequelize, DataTypes } = require('sequelize');
-const config = require('../config/config');
+
 /* ---------- Sequelize instance ---------- */
 const sequelize = new Sequelize(
-    process.env.DATABASE_NAME,      // Database name from .env
-    process.env.DATABASE_USERNAME,  // Username from .env
-    process.env.DATABASE_PASSWORD,  // Password from .env
+    String(process.env.DATABASE_NAME || ''),      // Ensure string with fallback
+    String(process.env.DATABASE_USERNAME || ''),  // Ensure string with fallback
+    String(process.env.DATABASE_PASSWORD || ''),  // Ensure string with fallback
     {
-        host: process.env.DATABASE_HOST, // Host from .env
-        port: process.env.DATABASE_PORT, // Port from .env
+        host: process.env.DATABASE_HOST || 'localhost',
+        port: parseInt(process.env.DATABASE_PORT || '5432', 10),
         dialect: 'postgres',
         logging: false,
         pool: {
