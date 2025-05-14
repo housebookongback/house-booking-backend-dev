@@ -166,6 +166,15 @@ module.exports = (sequelize, DataTypes) => {
     HostProfile.prototype.getProfileDetails = function() {
       return {
         id: this.id,
+        userId: this.userId,
+        user: this.user ? {
+          id: this.user.id,
+          email: this.user.email,
+          name: this.user.name,
+          phone: this.user.phone,
+          isVerified: this.user.isVerified,
+          status: this.user.status
+        } : null,
         displayName: this.displayName,
         bio: this.bio,
         profilePicture: this.profilePicture,

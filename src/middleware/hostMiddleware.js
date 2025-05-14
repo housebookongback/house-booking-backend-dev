@@ -1,4 +1,4 @@
-const { User } = require('../models');
+const { User, Role, UserRoles, HostProfile } = require('../models');
 
 /**
  * HOST MIDDLEWARE GUIDE
@@ -10,13 +10,13 @@ const { User } = require('../models');
  * 
  * WHAT IT CHECKS:
  * 1. User exists in database
- * 2. User is either a host or admin
- * 3. If user is a host, their account is verified
+ * 2. User has host role through UserRoles
+ * 3. If user is a host, their host profile is verified
  * 
  * ERROR RESPONSES:
  * - 404: "User not found" - User doesn't exist in database
  * - 403: "Only hosts can perform this action" - User is not a host/admin
- * - 403: "Host account needs to be verified" - Host account not verified
+ * - 403: "Host account needs to be verified" - Host profile not verified
  * - 500: Server error with details
  * 
  * ON SUCCESS:
@@ -35,20 +35,42 @@ const { User } = require('../models');
 const verifyHost = async (req, res, next) => {
     try {
         // Get user from database using ID in JWT token
-        const user = await User.findByPk(req.user.id);
+        const user = await User.findByPk(req.user.id, {
+            include: [{
+                model: Role,
+                as: 'roles',
+                through: UserRoles
+            }]
+        });
         
         if (!user) {
             return res.status(404).json({ message: 'User not found' });
         }
 
-        // Check if user has host or admin role
-        if (user.role !== 'host' && user.role !== 'admin') {
+        // Check if user has host or admin role through UserRoles
+        const hasHostRole = user.roles.some(role => role.name === 'host');
+        const hasAdminRole = user.roles.some(role => role.name === 'admin');
+
+        if (!hasHostRole && !hasAdminRole) {
             return res.status(403).json({ message: 'Only hosts can perform this action' });
         }
 
-        // For hosts, verify their account status
-        if (!user.isVerified && user.role === 'host') {
-            return res.status(403).json({ message: 'Host account needs to be verified' });
+        // For hosts, verify their profile status
+        if (hasHostRole) {
+            const hostProfile = await HostProfile.findOne({
+                where: { userId: user.id }
+            });
+
+            if (!hostProfile) {
+                return res.status(403).json({ message: 'Host profile not found' });
+            }
+
+            if (hostProfile.verificationStatus !== 'verified') {
+                return res.status(403).json({ 
+                    message: 'Host account needs to be verified',
+                    verificationStatus: hostProfile.verificationStatus
+                });
+            }
         }
 
         // Add host data to request for use in controller

@@ -16,6 +16,8 @@ const { uploadMultiple } = require('./middleware/upload');
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
+const hostRoutes = require('./routes/hostRoutes');
+const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
 
 const app = express();
 
@@ -51,6 +53,8 @@ db.init()
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/host', hostRoutes);
+app.use('/api/admin', adminRoutes); // Add admin routes
 
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
