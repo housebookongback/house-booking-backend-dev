@@ -3,7 +3,54 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.bulkInsert('PropertyTypes', [
+    // 1. Créer d'abord le type ENUM
+    await queryInterface.sequelize.query(`
+      DO $$ BEGIN
+        CREATE TYPE "enum_PropertyTypes_name" AS ENUM (
+          'house', 'apartment', 'villa', 'condo', 'townhouse', 'cabin', 'cottage',
+          'bungalow', 'studio', 'loft', 'guesthouse', 'farmhouse', 'castle',
+          'treehouse', 'yurt', 'tent', 'boat', 'other'
+        );
+      EXCEPTION WHEN duplicate_object THEN null;
+      END $$;
+    `);
+
+    // 2. Créer la table avec la colonne ENUM
+    await queryInterface.createTable('PropertyTypes', {
+      id: {
+        type: Sequelize.INTEGER,
+        primaryKey: true,
+        autoIncrement: true
+      },
+      name: {
+        type: 'enum_PropertyTypes_name',
+        allowNull: false,
+        unique: true
+      },
+      description: {
+        type: Sequelize.TEXT,
+        allowNull: true
+      },
+      icon: {
+        type: Sequelize.STRING,
+        allowNull: true
+      },
+      isActive: {
+        type: Sequelize.BOOLEAN,
+        defaultValue: true
+      },
+      createdAt: {
+        type: Sequelize.DATE,
+        allowNull: false
+      },
+      updatedAt: {
+        type: Sequelize.DATE,
+        allowNull: false
+      }
+    });
+
+    // 3. Insérer les données
+    return queryInterface.bulkInsert('PropertyTypes', [
       {
         name: 'house',
         description: 'A standalone residential building',
@@ -152,6 +199,7 @@ module.exports = {
   },
 
   async down(queryInterface, Sequelize) {
-    await queryInterface.bulkDelete('PropertyTypes', null, {});
+    await queryInterface.dropTable('PropertyTypes');
+    return queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_PropertyTypes_name";');
   }
 };

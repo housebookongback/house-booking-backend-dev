@@ -3,9 +3,9 @@ const { Sequelize, DataTypes } = require('sequelize');
 
 /* ---------- Sequelize instance ---------- */
 const sequelize = new Sequelize(
-    String(process.env.DATABASE_NAME || ''),      // Ensure string with fallback
-    String(process.env.DATABASE_USERNAME || ''),  // Ensure string with fallback
-    String(process.env.DATABASE_PASSWORD || ''),  // Ensure string with fallback
+    process.env.DATABASE_NAME ,      // Ensure string with fallback
+    process.env.DATABASE_USERNAME ,  // Ensure string with fallback
+    process.env.DATABASE_PASSWORD ,  // Ensure string with fallback
     {
         host: process.env.DATABASE_HOST || 'localhost',
         port: parseInt(process.env.DATABASE_PORT || '5432', 10),

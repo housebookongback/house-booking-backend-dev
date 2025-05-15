@@ -1,4 +1,8 @@
+
+const { OAuth2Client } = require('google-auth-library');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');  // Add this import at the top
 const db = require('../models');
 const { generateToken } = require('../middleware/jwtUtils');
 const { ValidationError } = require('sequelize');
@@ -244,10 +248,173 @@ const validatePassword = (password) => {
     }
 };
 
+
+// Initialize Google OAuth client
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// Google Sign In/Sign Up
+/**
+ * Handle Google OAuth authentication
+ * @route POST /api/auth/google
+ */
+
+
+const oauth2Client = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+);
+
+/**
+ * Get Google OAuth URL
+ * @route GET /api/auth/google/url
+ */
+const getGoogleAuthURL = (req, res) => {
+    const scopes = [
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/userinfo.email'
+    ];
+
+    const url = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: scopes,
+        include_granted_scopes: true
+    });
+
+    res.json({ url });
+};
+
+/**
+ * Handle Google OAuth callback
+ * @route GET /api/auth/google/callback
+ */
+const handleGoogleCallback = async (req, res) => {
+    try {
+        const { code } = req.query;
+        
+        if (!code) {
+            return res.redirect(`http://localhost:5173/login?error=${encodeURIComponent('Authorization code is required')}`);
+        }
+
+        // Exchange the authorization code for tokens
+        const { tokens } = await oauth2Client.getToken(code);
+        oauth2Client.setCredentials(tokens);
+
+        // Get user info using the access token
+        const ticket = await oauth2Client.verifyIdToken({
+            idToken: tokens.id_token,
+            audience: process.env.GOOGLE_CLIENT_ID
+        });
+
+        const payload = ticket.getPayload();
+        
+        // Check if user exists
+        let user = await db.User.findOne({ where: { email: payload.email } });
+        
+        if (!user) {
+            // Create new user if doesn't exist
+            const randomPassword = crypto.randomBytes(32).toString('hex');
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash(randomPassword, salt);
+            
+            user = await db.User.create({
+                name: payload.name,
+                email: payload.email,
+                isVerified: true,
+                emailVerifiedAt: new Date(),
+                status: 'active',
+                googleId: payload.sub,
+                picture: payload.picture,
+                passwordHash: passwordHash
+            });
+        }
+
+        // Generate JWT token
+        const jwtToken = generateToken({
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            isVerified: user.isVerified
+        });
+
+        // Redirect to frontend with token
+        return res.redirect(302, `http://localhost:5173/auth/callback?token=${encodeURIComponent(jwtToken)}`);
+
+    } catch (error) {
+        console.error('Google callback error details:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code
+        });
+        
+        // Redirect to login page with error
+        return res.redirect(`http://localhost:5173/login?error=${encodeURIComponent('Failed to authenticate with Google')}`);
+    }
+};
+const googleAuth = async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        const ticket = await oauth2Client.verifyIdToken({
+            idToken: token,
+            audience: process.env.GOOGLE_CLIENT_ID
+        });
+
+        const payload = ticket.getPayload();
+        
+        // Check if user exists
+        let user = await db.User.findOne({ where: { email: payload.email } });
+        
+        if (!user) {
+            // Create new user if doesn't exist
+            user = await db.User.create({
+                name: payload.name,
+                email: payload.email,
+                isVerified: true,
+                emailVerifiedAt: new Date(),
+                status: 'active',
+                googleId: payload.sub,
+                picture: payload.picture
+            });
+        } else if (!user.googleId) {
+            // Link Google account to existing user
+            await user.update({
+                googleId: payload.sub,
+                picture: payload.picture
+            });
+        }
+
+        // Generate JWT token
+        const jwtToken = generateToken({
+            id: user.id,
+            email: user.email,
+            role: user.role
+        });
+
+        res.json({
+            token: jwtToken,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                isVerified: user.isVerified,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error('Google authentication error:', error);
+        res.status(500).json({ message: 'Failed to authenticate with Google' });
+    }
+};
+
+// Add handleGoogleCallback to module exports
 module.exports = {
+    googleAuth,
     register,
     login,
     verifyEmail,
     forgotPassword,
-    resetPassword
-}; 
+    resetPassword,
+    getGoogleAuthURL,
+    handleGoogleCallback  // Add this line
+};
