@@ -177,7 +177,7 @@ const bookingController = {
     updateBookingRequestStatus: async (req, res) => {
         const { requestId } = req.params;
         const { status, responseMessage } = req.body;
-        console.log(status, responseMessage,"status and responseMessage");
+       
         const hostId = req.user.id;
         if (!status || !['approved', 'rejected'].includes(status)) {
             return res.status(400).json({
@@ -281,7 +281,9 @@ const bookingController = {
         }
     },
     updateBookingStatus: async (req, res) => {
-        const { bookingId } = req.params;
+        
+        const { id } = req.params;
+       
         const { status, reason } = req.body;
         const hostId = req.user.id;
 
@@ -297,9 +299,10 @@ const bookingController = {
             // Start a transaction
             const result = await db.sequelize.transaction(async (t) => {
                 // Find the booking
+               
                 const booking = await db.Booking.findOne({
                     where: { 
-                        id: bookingId,
+                        id: id,
                         hostId: hostId
                     },
                     include: [{
@@ -313,8 +316,11 @@ const bookingController = {
                     throw new Error('Booking not found');
                 }
 
+                
+
                 // Validate status transition
                 const currentStatus = booking.status;
+                
                 if (!validStatuses[currentStatus].includes(status)) {
                     throw new Error(`Cannot change status from ${currentStatus} to ${status}`);
                 }
@@ -357,6 +363,8 @@ const bookingController = {
             });
 
         } catch (error) {
+           
+           
             console.error('Error updating booking status:', error);
             return res.status(500).json({
                 success: false,
@@ -384,7 +392,7 @@ const bookingController = {
                     {
                         model: db.User,
                         as: 'guest',
-                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
+                        attributes: ['id', 'name', 'email', 'phone']
                     },
                     {
                         model: db.Listing,
@@ -418,7 +426,7 @@ const bookingController = {
                     {
                         model: db.User,
                         as: 'guest',
-                        attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
+                        attributes: ['id', 'name',  'email', 'phone']
                     },
                     {
                         model: db.Listing,
@@ -472,7 +480,7 @@ const bookingController = {
                     {
                         model: db.User,
                         as: 'guest',
-                        attributes: ['id', 'firstName', 'lastName']
+                        attributes: ['id', 'name', 'email', 'phone']
                     }
                 ]
             });

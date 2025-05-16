@@ -17,6 +17,7 @@ const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const hostRoutes = require('./routes/hostRoutes');
+const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
 
 const app = express();
@@ -54,6 +55,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/host', hostRoutes);
+app.use('/api/guest', guestRoutes);
 app.use('/api/admin', adminRoutes); // Add admin routes
 
 // Test upload route

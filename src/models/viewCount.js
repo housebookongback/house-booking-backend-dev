@@ -97,19 +97,31 @@ module.exports = (sequelize, DataTypes) => {
         ],
         validate: {
             validEntity() {
-                const types = ['listing', 'user', 'category', 'location'];
-                if (!types.includes(this.entityType)) {
+                const validTypes = ['listing', 'user', 'category', 'location'];
+                if (!this.entityType || !validTypes.includes(this.entityType)) {
                     throw new Error('Invalid entity type');
                 }
             },
             async entityExists() {
-                const model = sequelize.models[this.entityType.charAt(0).toUpperCase() + this.entityType.slice(1)];
+                if (!this.entityType || !this.entityId) {
+                    throw new Error('Entity type and ID are required');
+                }
+                
+                // Convert first letter to uppercase for model name
+                const modelName = this.entityType.charAt(0).toUpperCase() + this.entityType.slice(1);
+                const model = sequelize.models[modelName];
+                
                 if (!model) {
                     throw new Error(`Model for entity type ${this.entityType} not found`);
                 }
-                const exists = await model.findByPk(this.entityId);
-                if (!exists) {
-                    throw new Error(`${this.entityType} with ID ${this.entityId} does not exist`);
+                
+                try {
+                    const exists = await model.findByPk(this.entityId);
+                    if (!exists) {
+                        throw new Error(`${this.entityType} with ID ${this.entityId} does not exist`);
+                    }
+                } catch (error) {
+                    throw new Error(`Error validating ${this.entityType}: ${error.message}`);
                 }
             }
         },
