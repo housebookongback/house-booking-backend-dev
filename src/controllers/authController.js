@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const db = require('../models');
 const { generateToken } = require('../middleware/jwtUtils');
-const { ValidationError } = require('sequelize');
+const { ValidationError, Op } = require('sequelize');
 
 /**
  * Register a new user
@@ -41,7 +41,7 @@ const register = async (req, res) => {
         const token = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: 'user' // Default role for new users
         });
 
         // Return user data (excluding sensitive information)
@@ -52,7 +52,8 @@ const register = async (req, res) => {
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
-                isVerified: user.isVerified
+                isVerified: user.isVerified,
+                role: 'user' // Default role for new users
             },
             token
         });
@@ -82,8 +83,19 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Find user
-        const user = await db.User.findOne({ where: { email } });
+        // Find user with their roles included
+        const user = await db.User.findOne({
+            where: { email },
+            include: [
+                {
+                    model: db.Role,
+                    as: 'roles',
+                    attributes: ['name'],
+                    through: { attributes: [] } // Don't include junction table attributes
+                }
+            ]
+        });
+
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -102,14 +114,31 @@ const login = async (req, res) => {
         // Update last login
         await user.update({ lastLogin: new Date() });
 
-        // Generate JWT token
+        // Determine the primary role
+        let primaryRole = 'user';  // Default role
+        
+        // Check roles array from the association
+        if (user.roles && user.roles.length > 0) {
+            // If user has multiple roles, prioritize in this order: admin > host > user
+            const roleNames = user.roles.map(role => role.name);
+            
+            if (roleNames.includes('admin')) {
+                primaryRole = 'admin';
+            } else if (roleNames.includes('host')) {
+                primaryRole = 'host';
+            }
+            
+            console.log('User roles:', roleNames, 'Primary role:', primaryRole);
+        }
+
+        // Generate JWT token with the primary role
         const token = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: primaryRole
         });
 
-        // Return user data
+        // Return user data with primary role
         res.json({
             message: 'Login successful',
             user: {
@@ -118,7 +147,7 @@ const login = async (req, res) => {
                 email: user.email,
                 phone: user.phone,
                 isVerified: user.isVerified,
-                role: user.role
+                role: primaryRole
             },
             token
         });

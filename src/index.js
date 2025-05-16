@@ -22,11 +22,21 @@ const app = express();
 /* ───────────── Global middleware ───────────── */
 app.use(helmet()); // Security headers
 app.use(cors({
-    origin: config.appUrl, // Allow requests from your frontend
+    origin: '*', // Allow all origins during development
     credentials: true      // Allow cookies/sessions
 }));
 app.use(morgan('dev')); // Logging
 app.use(express.json({ limit: '10kb' })); // Parse JSON bodies with size limit
+
+/* ───────────── Static files with CORS headers ───────────── */
+// Configure CORS headers specifically for static files in uploads directory
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static('uploads'));
 
 /* ───────────── Health check ───────────── */
 app.get('/', (_, res) =>
@@ -46,7 +56,6 @@ db.init()
     console.error('❌  Database connection failed:', error);
   });
 
-  app.use('/uploads', express.static('uploads'));
 /* ───────────── API routes ───────────── */
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
