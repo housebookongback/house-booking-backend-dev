@@ -192,6 +192,7 @@ module.exports = (sequelize, DataTypes) => {
         User.hasMany(models.ViewCount, { foreignKey: 'userId', as: 'viewCounts' });
         User.hasMany(models.ClickCount, { foreignKey: 'userId', as: 'clickCounts' });
         User.hasMany(models.Maintenance, { foreignKey: 'userId', as: 'maintenances' });
+        User.hasMany(models.Wishlist, { foreignKey: 'userId', as: 'wishlists' });
     };
 
     // Add these methods here, before return User

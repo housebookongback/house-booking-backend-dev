@@ -238,7 +238,7 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: false
       },
       status: {
-        type: DataTypes.ENUM('draft','published','archived'),
+        type: DataTypes.ENUM('draft','published','archived','deleted'),
         allowNull: false,
         defaultValue: 'draft'
       },
@@ -463,6 +463,15 @@ module.exports = (sequelize, DataTypes) => {
   
       // Reports
       Listings.hasMany(models.Report,            { foreignKey: 'listingId', as: 'reports' });
+
+      // Wishlist
+      Listings.hasMany(models.Wishlist, { foreignKey: 'listingId', as: 'savedByUsers' });
+      Listings.belongsToMany(models.User, {
+        through: models.Wishlist,
+        foreignKey: 'listingId',
+        otherKey: 'userId',
+        as: 'usersWhoWishlisted'
+      });
     };
   
     return Listings;

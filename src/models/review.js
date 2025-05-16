@@ -107,7 +107,7 @@ module.exports = (sequelize, DataTypes) => {
                         where: { 
                             reviewedId: review.reviewedId, 
                             type: 'host',
-                            isActive: true
+                            deletedAt: null
                         },
                         attributes: [
                             [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating'],
@@ -143,7 +143,7 @@ module.exports = (sequelize, DataTypes) => {
                             where: { 
                                 reviewedId: review.reviewedId, 
                                 type: 'host',
-                                isActive: true
+                                deletedAt: null
                             },
                             attributes: [
                                 [sequelize.fn('AVG', sequelize.col('rating')), 'avgRating'],
