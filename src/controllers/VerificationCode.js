@@ -70,7 +70,7 @@ const sendEmail = async (req, res) => {
                 <div style="display: inline-block; padding: 16px 32px; background-color: #3b82f6; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: 2px; border-radius: 8px; margin: 24px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                   ${verificationCode}
                 </div>
-                <p style="color: #4a5568; font-size: 14px; line-height: 20px; margin: 24px 0 16px;">This code expires in 10 minutes. If you didn't request this, please ignore this email.</p>
+                <p style="color: #4a5568; font-size: 14px; line-height: 20px; margin: 24px 0 16px;">This code expires in 5 minutes. If you didn't request this, please ignore this email.</p>
                 <p style="color: #4a5568; font-size: 14px; line-height: 20px; margin: 16px 0 0;">Best regards,<br>The House Booking Team</p>
               </td>
             </tr>

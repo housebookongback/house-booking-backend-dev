@@ -59,5 +59,6 @@ router.post('/google', authController.googleAuth);
 router.get('/google/url', authController.getGoogleAuthURL);
 // Add this new route
 router.get('/google/callback', authController.handleGoogleCallback);
+router.post('/checking', authController.checkEmailAndPassword);
 
 module.exports = router;

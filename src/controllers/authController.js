@@ -31,15 +31,9 @@ const register = async (req, res) => {
             email,
             passwordHash,
             phone,
-            isVerified: false,
+            isVerified: true,
             status: 'active'
         });
-
-        // Generate verification token
-        const verificationToken = await user.generateVerificationToken();
-
-        // TODO: Send verification email
-        // await sendVerificationEmail(user.email, verificationToken);
 
         // Generate JWT token
         const token = generateToken({
@@ -406,7 +400,58 @@ const googleAuth = async (req, res) => {
         res.status(500).json({ message: 'Failed to authenticate with Google' });
     }
 };
+const checkEmailAndPassword = async (req, res) => {
+    try {
+        const { email, password, confirmPassword } = req.body;
 
+        // Check if email exists first
+        const existingUser = await db.User.findOne({ where: { email } });
+        
+        // If email doesn't exist, return early
+        if (!existingUser) {
+            return res.json({
+                success: true,
+                exists: false,
+                message: 'Email available'
+            });
+        }
+
+        // Only check passwords if email exists and passwords are provided
+        if (password && confirmPassword) {
+            // Check if passwords match
+            if (password !== confirmPassword) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Passwords do not match'
+                });
+            }
+
+            // Validate password strength
+            try {
+                validatePassword(password);
+            } catch (error) {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+        }
+
+        // Return email exists response
+        return res.json({
+            success: true,
+            exists: true,
+            message: 'Email already registered'
+        });
+
+    } catch (error) {
+        console.error('Email and password check error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error checking email and password'
+        });
+    }
+};
 // Add handleGoogleCallback to module exports
 module.exports = {
     googleAuth,
@@ -416,5 +461,15 @@ module.exports = {
     forgotPassword,
     resetPassword,
     getGoogleAuthURL,
-    handleGoogleCallback  // Add this line
+    handleGoogleCallback ,
+    checkEmailAndPassword
 };
+
+
+/**
+ * Check email existence and validate password match
+ * @route POST /api/auth/check-email-password
+ */
+
+
+// Add to module exports
