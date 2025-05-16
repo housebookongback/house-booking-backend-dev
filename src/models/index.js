@@ -56,6 +56,7 @@ db.HostEarnings = require('./hostEarnings')(sequelize, DataTypes);
 db.GuestProfile = require('./guestProfile')(sequelize, DataTypes);
 db.GuestPreferences = require('./guestPreferences')(sequelize, DataTypes);
 db.GuestVerification = require('./guestVerification')(sequelize, DataTypes);
+db.Wishlist = require('./wishlist')(sequelize, DataTypes);
 
 // Booking and pricing models
 db.Booking = require('./booking')(sequelize, DataTypes);
@@ -133,6 +134,9 @@ db.init = async (alter = false) => {
         await db.PropertyRule.sync({ alter });
         await db.PropertyPolicy.sync({ alter });
         await db.PropertyAvailability.sync({ alter });
+        
+        // Wishlist
+        await db.Wishlist.sync({ alter });
         
         // Booking and pricing models
         await db.PriceRule.sync({ alter });

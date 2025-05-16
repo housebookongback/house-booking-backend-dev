@@ -26,6 +26,13 @@ const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
 const { Op } = require('sequelize');
+const User = db.User;
+const HostProfile = db.HostProfile;
+const ViewCount = db.ViewCount;
+const Location = db.Location;
+const PropertyRule = db.PropertyRule;
+const Amenity = db.Amenity;
+const Category = db.Category;
 
 const listingController = {
     // Public routes
@@ -133,18 +140,22 @@ const listingController = {
             const {
                 title,
                 description,
-                propertyTypeId
+                propertyTypeId,
+                categoryId,
+                amenityIds  // Array of amenity IDs
             } = req.body;
 
             // Validate required fields
-            if (!title || !description || !propertyTypeId) {
+            if (!title || !description || !propertyTypeId || !categoryId || !amenityIds || !Array.isArray(amenityIds) || amenityIds.length === 0) {
                 return res.status(400).json({
                     success: false,
                     error: 'Missing required fields',
                     details: {
                         title: !title ? 'Title is required' : null,
                         description: !description ? 'Description is required' : null,
-                        propertyTypeId: !propertyTypeId ? 'Property type is required' : null
+                        propertyTypeId: !propertyTypeId ? 'Property type is required' : null,
+                        categoryId: !categoryId ? 'Category is required' : null,
+                        amenityIds: !amenityIds || !Array.isArray(amenityIds) || amenityIds.length === 0 ? 'At least one amenity is required' : null
                     }
                 });
             }
@@ -189,38 +200,91 @@ const listingController = {
                 });
             }
 
-            // Create the draft listing
-            const listing = await Listing.create({
-                title,
-                description,
-                propertyTypeId,
-                hostId: req.user.id,
-                status: 'draft',
-                step: 1,
-                stepStatus: {
-                    basicInfo: true,
-                    location: false,
-                    details: false,
-                    pricing: false,
-                    photos: false,
-                    rules: false,
-                    calendar: false
-                },
-                isActive: true
+            // Check if category exists
+            const category = await Category.findOne({
+                where: {
+                    id: categoryId,
+                    isActive: true
+                }
+            });
+
+            if (!category) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid category',
+                    details: {
+                        categoryId: 'Selected category does not exist'
+                    }
+                });
+            }
+
+            // Check if all amenities exist
+            const amenities = await Amenity.findAll({
+                where: {
+                    id: { [Op.in]: amenityIds },
+                    isActive: true
+                }
+            });
+
+            if (amenities.length !== amenityIds.length) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid amenities',
+                    details: {
+                        amenityIds: 'One or more selected amenities do not exist or are inactive'
+                    }
+                });
+            }
+
+            // Create the draft listing and amenities in a transaction
+            const result = await db.sequelize.transaction(async (t) => {
+                // Create the listing
+                const listing = await Listing.create({
+                    title,
+                    description,
+                    propertyTypeId,
+                    categoryId,
+                    hostId: req.user.id,
+                    status: 'draft',
+                    step: 1,
+                    stepStatus: {
+                        basicInfo: true,
+                        location: false,
+                        details: false,
+                        pricing: false,
+                        photos: false,
+                        rules: false,
+                        calendar: false
+                    },
+                    isActive: true
+                }, { transaction: t });
+
+                // Create amenity associations
+                await db.ListingAmenities.bulkCreate(
+                    amenityIds.map(amenityId => ({
+                        listingId: listing.id,
+                        amenityId
+                    })),
+                    { transaction: t }
+                );
+
+                return listing;
             });
 
             res.status(201).json({
                 success: true,
                 message: 'Draft listing created successfully',
                 data: {
-                    id: listing.id,
-                    title: listing.title,
-                    description: listing.description,
-                    propertyTypeId: listing.propertyTypeId,
-                    status: listing.status,
-                    step: listing.step,
-                    stepStatus: listing.stepStatus,
-                    createdAt: listing.createdAt
+                    id: result.id,
+                    title: result.title,
+                    description: result.description,
+                    propertyTypeId: result.propertyTypeId,
+                    categoryId: result.categoryId,
+                    amenityIds,
+                    status: result.status,
+                    step: result.step,
+                    stepStatus: result.stepStatus,
+                    createdAt: result.createdAt
                 }
             });
         } catch (error) {
@@ -444,9 +508,9 @@ const listingController = {
         }
 
         try {
-            console.log('Request body:', req.body);
-            console.log('Request files:', req.files);
-            console.log('Request headers:', req.headers);
+            //console.log('Request body:', req.body);
+            //console.log('Request files:', req.files);
+             //console.log('Request headers:', req.headers);
 
             const { listingId } = req.params;
             const { isCover } = req.body;
@@ -773,10 +837,10 @@ updateCalendar: async (req, res) => {
     // Final Step: Publish
     publishListing: async (req, res) => {
         const { listingId } = req.params;
-        console.log("listingId", listingId)
-        console.log("req.user.id", req.user.id)
+        //console.log("listingId", listingId)
+        //console.log("req.user.id", req.user.id)
         try {
-            console.log("z;f, erf;",Listing)
+            //console.log("z;f, erf;",Listing)
             const listing = await Listing.findOne({
                 where: {
                     id: listingId,
@@ -784,7 +848,7 @@ updateCalendar: async (req, res) => {
                     status: 'draft'
                 }
             });
-            console.log("listing", listing)
+                //console.log("listing", listing)
             if (!listing) {
                 return res.status(404).json({
                     success: false,
@@ -975,6 +1039,476 @@ updateCalendar: async (req, res) => {
             return res.status(500).json({
                 success: false,
                 error: 'Failed to check availability'
+            });
+        }
+    },
+
+    // First implementation - getSingleListing
+    getSingleListing: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            console.log('⚡ Fetching listing with ID:', listingId);
+            console.log('⚡ Query conditions:', { 
+                id: listingId,
+                isActive: true 
+            });
+
+            // Find the listing with all its related data
+            const listing = await Listing.findOne({
+                where: { 
+                    id: listingId,
+                    isActive: true
+                },
+                include: [
+                    {
+                        model: Photo,
+                        as: 'photos',
+                        attributes: ['id', 'url', 'isCover', 'caption']
+                    },
+                    {
+                        model: PropertyType,
+                        as: 'propertyType',
+                        attributes: ['id', 'name', 'icon']
+                    },
+                    {
+                        model: Location,
+                        as: 'locationDetails',
+                        attributes: ['id', 'name', 'description']
+                    },
+                    {
+                        model: PropertyRule,
+                        as: 'propertyRules',
+                        attributes: ['id', 'title', 'description', 'isAllowed']
+                    },
+                    {
+                        model: Amenity,
+                        as: 'amenities',
+                        attributes: ['id', 'name', 'description', 'icon']
+                    },
+                    {
+                        model: Category,
+                        as: 'category',
+                        attributes: ['id', 'name', 'description']
+                    },
+                    {
+                        model: User,
+                        as: 'host',
+                        attributes: ['id', 'name', 'email'],
+                        include: [{
+                            model: HostProfile,
+                            as: 'hostProfile',
+                            attributes: ['id', 'displayName', 'bio', 'responseRate', 'responseTime']
+                        }]
+                    }
+                ],
+                raw: true,
+                nest: true
+            });
+
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found'
+                });
+            }
+
+            // Handle view count separately to avoid circular references
+            if (req.user?.id !== listing.hostId) {
+                try {
+                    await ViewCount.create({
+                        entityType: 'listing',
+                        entityId: listing.id,
+                        userId: req.user?.id || null,
+                        ipAddress: req.ip,
+                        userAgent: req.headers['user-agent']
+                    });
+                } catch (viewError) {
+                    console.error('Error recording view:', viewError);
+                    // Continue execution even if view count fails
+                }
+            }
+
+            // Clean up the response data
+            const responseData = {
+                ...listing,
+                isOwner: req.user?.id === listing.hostId,
+                host: listing.host ? {
+                    id: listing.host.id,
+                    name: listing.host.name,
+                    hostProfile: listing.host.hostProfile
+                } : null
+            };
+
+            res.json({
+                success: true,
+                data: responseData
+            });
+
+        } catch (error) {
+            console.error('Error fetching listing:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch listing details'
+            });
+        }
+    },
+
+    // Toggle listing active/inactive status
+    toggleListingStatus: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            const { status } = req.body; // Expected: 'active' or 'inactive'
+
+            // Input validation
+            if (!['active', 'inactive'].includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid status. Must be either "active" or "inactive"'
+                });
+            }
+
+            // Find the listing and verify ownership
+            const listing = await Listing.findOne({
+                where: { 
+                    id: listingId,
+                    hostId: req.user.id // Ensure the user owns this listing
+                }
+            });
+
+            // Check if listing exists and user has permission
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or you do not have permission to modify it'
+                });
+            }
+
+            // Check if listing is in published state
+            if (listing.status !== 'published') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Only published listings can be activated/deactivated'
+                });
+            }
+
+            // Update the listing status
+            await listing.update({
+                isActive: status === 'active',
+                updatedAt: new Date()
+            });
+             // TODO: Audit logging functionality to be implemented later
+            // This will track listing status changes with:
+            // - Who made the change (userId)
+            // - What changed (status)
+            // - When it changed (timestamp)
+            // - Previous and new status
+
+            // Create an audit log entry (optional but recommended)
+            //await db.ListingAuditLog.create({
+              //  listingId: listing.id,
+               // userId: req.user.id,
+               // action: `status_change_${status}`,
+               // details: {
+                    //previousStatus: !listing.isActive ? 'inactive' : 'active',
+                    //newStatus: status,
+                   // timestamp: new Date()
+               // }
+           // }).catch(err => console.error('Error creating audit log:', err));
+           
+            // Return success response
+            res.json({
+                success: true,
+                message: `Listing successfully ${status === 'active' ? 'activated' : 'deactivated'}`,
+                data: {
+                    id: listing.id,
+                    status: status,
+                    isActive: status === 'active',
+                    updatedAt: listing.updatedAt
+                }
+            });
+
+        } catch (error) {
+            console.error('Error toggling listing status:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to update listing status'
+            });
+        }
+    },
+
+    // Delete a listing (soft delete)
+    deleteListing: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+
+            // Find the listing and verify ownership
+            const listing = await Listing.findOne({
+                where: { 
+                    id: listingId,
+                    hostId: req.user.id // Ensure the user owns this listing
+                },
+                include: [
+                    {
+                        model: db.Booking,
+                        as: 'bookings',
+                        where: {
+                            status: {
+                                [Op.in]: ['pending', 'confirmed'] // Check for active bookings
+                            }
+                        },
+                        required: false
+                    }
+                ]
+            });
+
+            // Check if listing exists and user has permission
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or you do not have permission to delete it'
+                });
+            }
+
+            // Check if there are any active bookings
+            if (listing.bookings && listing.bookings.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Cannot delete listing with active bookings',
+                    activeBookings: listing.bookings.length
+                });
+            }
+
+            // Perform soft delete within a transaction
+            await db.sequelize.transaction(async (t) => {
+                // Update listing status
+                await listing.update({
+                    isActive: false,
+                    status: 'deleted',
+                    deletedAt: new Date()
+                }, { transaction: t });
+
+                // Create an audit log entry
+                // await db.ListingAuditLog.create({
+                //     listingId: listing.id,
+                //     userId: req.user.id,
+                //     action: 'listing_deleted',
+                //     details: {
+                //         timestamp: new Date(),
+                //         reason: req.body.reason || 'User initiated deletion'
+                //     }
+                // }, { transaction: t });
+
+                // Cancel any pending bookings (if they exist)
+                await db.Booking.update(
+                    {
+                        status: 'cancelled',
+                        cancellationReason: 'Listing deleted by host'
+                    },
+                    {
+                        where: {
+                            listingId: listing.id,
+                            status: 'pending'
+                        },
+                        transaction: t
+                    }
+                );
+            });
+
+            // Return success response
+            res.json({
+                success: true,
+                message: 'Listing successfully deleted',
+                data: {
+                    id: listing.id,
+                    deletedAt: new Date()
+                }
+            });
+
+        } catch (error) {
+            console.error('Error deleting listing:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to delete listing'
+            });
+        }
+    },
+
+    // Get all listings for the authenticated host
+    getHostListings: async (req, res) => {
+        try {
+            const {
+                page = 1,
+                limit = 10,
+                status,
+                propertyType,
+                priceRange,
+                bedrooms,
+                searchTerm,
+                sortBy = 'createdAt',
+                sortOrder = 'DESC'
+            } = req.query;
+
+            // Build base query options
+            const queryOptions = {
+                where: {
+                    hostId: req.user.id // Only get listings for the authenticated host
+                },
+                include: [
+                    {
+                        model: Photo,
+                        as: 'photos',
+                        attributes: ['id', 'url', 'isCover'],
+                        where: { isCover: true },
+                        required: false
+                    },
+                    {
+                        model: PropertyType,
+                        as: 'propertyType',
+                        attributes: ['id', 'name', 'icon']
+                    },
+                    {
+                        model: Location,
+                        as: 'locationDetails',
+                        attributes: ['id', 'name', 'address', 'city', 'state', 'country']
+                    },
+                    {
+                        model: db.Booking,
+                        as: 'bookings',
+                        attributes: [
+                            [db.sequelize.fn('COUNT', db.sequelize.col('bookings.id')), 'totalBookings'],
+                            [db.sequelize.fn('SUM', 
+                                db.sequelize.literal("CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END")), 
+                            'confirmedBookings']
+                        ],
+                        required: false
+                    }
+                ],
+                group: ['Listings.id', 'photos.id', 'propertyType.id', 'locationDetails.id'],
+                order: [[sortBy, sortOrder]],
+                limit: parseInt(limit),
+                offset: (parseInt(page) - 1) * parseInt(limit),
+                distinct: true // Important for correct count with includes
+            };
+
+            // Add filters if provided
+            if (status && status.length > 0) {
+                queryOptions.where.status = { [Op.in]: status };
+            }
+
+            if (propertyType && propertyType.length > 0) {
+                queryOptions.where.propertyTypeId = { [Op.in]: propertyType };
+            }
+
+            if (priceRange) {
+                const [minPrice, maxPrice] = priceRange.split(',').map(Number);
+                if (!isNaN(minPrice)) {
+                    queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
+                }
+                if (!isNaN(maxPrice)) {
+                    queryOptions.where.pricePerNight = { 
+                        ...queryOptions.where.pricePerNight,
+                        [Op.lte]: maxPrice 
+                    };
+                }
+            }
+
+            if (bedrooms) {
+                queryOptions.where.bedrooms = { [Op.gte]: parseInt(bedrooms) };
+            }
+
+            if (searchTerm) {
+                queryOptions.where[Op.or] = [
+                    { title: { [Op.iLike]: `%${searchTerm}%` } },
+                    { description: { [Op.iLike]: `%${searchTerm}%` } },
+                    { '$locationDetails.address$': { [Op.iLike]: `%${searchTerm}%` } },
+                    { '$locationDetails.city$': { [Op.iLike]: `%${searchTerm}%` } }
+                ];
+            }
+
+            // Get listings and total count
+            const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
+
+            // Calculate listing statistics
+            const statistics = {
+                total: count,
+                published: listings.filter(l => l.status === 'published').length,
+                draft: listings.filter(l => l.status === 'draft').length,
+                active: listings.filter(l => l.isActive).length,
+                inactive: listings.filter(l => !l.isActive).length
+            };
+
+            // Format the response
+            const formattedListings = listings.map(listing => ({
+                ...listing.toJSON(),
+                bookingStats: {
+                    total: parseInt(listing.bookings?.[0]?.totalBookings || 0),
+                    confirmed: parseInt(listing.bookings?.[0]?.confirmedBookings || 0)
+                },
+                // Remove unnecessary booking data from response
+                bookings: undefined
+            }));
+
+            res.json({
+                success: true,
+                data: {
+                    listings: formattedListings,
+                    statistics,
+                    pagination: {
+                        total: count,
+                        page: parseInt(page),
+                        limit: parseInt(limit),
+                        totalPages: Math.ceil(count / parseInt(limit))
+                    }
+                }
+            });
+
+        } catch (error) {
+            console.error('Error fetching host listings:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch host listings'
+            });
+        }
+    },
+
+    getCategories: async (req, res) => {
+        try {
+            const categories = await Category.findAll({
+                attributes: ['id', 'name', 'description', 'icon', 'slug'],
+                order: [['name', 'ASC']],
+                where: { isActive: true }  // Only get active categories
+            });
+            
+            res.json({
+                success: true,
+                data: categories
+            });
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch categories'
+            });
+        }
+    },
+
+    getAmenities: async (req, res) => {
+        try {
+            const amenities = await Amenity.findAll({
+                attributes: ['id', 'name', 'description', 'icon', 'slug'],
+                order: [['name', 'ASC']],
+                where: { isActive: true }  // Only get active amenities
+            });
+            
+            res.json({
+                success: true,
+                data: amenities
+            });
+        } catch (error) {
+            console.error('Error fetching amenities:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch amenities'
             });
         }
     }

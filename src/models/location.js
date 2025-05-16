@@ -36,7 +36,19 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: true,
             unique: true,
-        }
+        },
+        city: {
+            type: DataTypes.STRING,
+            allowNull: true
+          },
+          state: {
+            type: DataTypes.STRING,
+            allowNull: true
+          },
+          country: {
+            type: DataTypes.STRING,
+            allowNull: true
+          },
     }, {
         tableName: 'Locations',
         timestamps: true,

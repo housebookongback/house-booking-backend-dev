@@ -1,6 +1,6 @@
 // src/models/booking.js
 const { Op, literal } = require('sequelize');
-
+let ListingModel;
 module.exports = (sequelize, DataTypes) => {
   const Booking = sequelize.define('Booking', {
     id: {
@@ -113,13 +113,27 @@ module.exports = (sequelize, DataTypes) => {
       }
     },
     hooks: {
+
+      // beforeValidate: async booking => {
+      //   // populate hostId from listing
+      //   if (!booking.hostId) {
+      //     const lst = await sequelize.models.Listing.findByPk(booking.listingId);
+      //     booking.hostId = lst.hostId;
+      //   }
+      // },
+
       beforeValidate: async booking => {
-        // populate hostId from listing
-        if (!booking.hostId) {
-          const lst = await sequelize.models.Listing.findByPk(booking.listingId);
-          booking.hostId = lst.hostId;
+        // Only attempt if listingId is defined and model is available
+        if (!booking.hostId && ListingModel && booking.listingId) {
+          const lst = await ListingModel.findByPk(booking.listingId);
+          if (lst) {
+            booking.hostId = lst.hostId;
+          } else {
+            throw new Error('Listing not found for given listingId');
+          }
         }
       },
+
       beforeCreate: async booking => {
         // conflict check
         const conflict = await booking.checkDateConflicts();
@@ -196,6 +210,7 @@ module.exports = (sequelize, DataTypes) => {
     Booking.hasMany(models.Message,   {  foreignKey: 'bookingId', as: 'messages' });
     Booking.hasOne(models.Review,     {  foreignKey: 'bookingId', as: 'review'   });
     Booking.hasMany(models.Payment,   {  foreignKey: 'bookingId', as: 'payments' });
+    ListingModel = models.Listing;
   };
 
   return Booking;
