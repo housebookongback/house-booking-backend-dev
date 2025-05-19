@@ -34,7 +34,7 @@ coverage/
 tmp/
 temp/ 
 
-# Uploads
+# Uploaded files
 uploads/
 
 #config

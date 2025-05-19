@@ -6,6 +6,7 @@ const { uploadMultiple } = require('../middleware/upload');
 
 // Step 1: Basic Information
 router.get('/property-types', listingController.getPropertyTypes);
+router.get('/categories', listingController.getCategories);
 router.post('/draft', authenticate, listingController.createDraftListing);
 // Add route for updating basic info
 router.patch('/:listingId/basic-info', authenticate, listingController.updateBasicInfo);
@@ -22,7 +23,16 @@ router.patch('/:listingId/pricing', authenticate, listingController.updatePricin
 // Step 5: Photos
 router.patch('/:listingId/photos', authenticate, uploadMultiple, listingController.updatePhotos);
 
-// Get all available amenities
+// Set a specific photo as featured/cover
+router.put('/:listingId/photos/:photoId/feature', authenticate, listingController.setPhotoAsFeatured);
+
+// Delete a specific photo
+router.delete('/:listingId/photos/:photoId', authenticate, listingController.deletePhoto);
+
+// Add new photos to an existing listing
+router.post('/:listingId/photos', authenticate, uploadMultiple, listingController.addPhotos);
+
+// Get all available amenities - Make this endpoint public
 router.get('/amenities', listingController.getAmenities);
 
 // Amenities Update
@@ -35,6 +45,7 @@ router.patch('/:listingId/rules-simple', authenticate, listingController.updateR
 
 // Step 7: Calendar
 router.patch('/:listingId/calendar', authenticate, listingController.updateCalendar);
+router.get('/:listingId/calendar', listingController.getCalendar);
 
 // Step Status Management
 router.patch('/:listingId/step-status', authenticate, listingController.updateStepStatus);
@@ -43,65 +54,11 @@ router.get('/:listingId/step-status', authenticate, listingController.getStepSta
 // Final Step: Publish
 router.patch('/:listingId/publish', authenticate, listingController.publishListing);
 
+// Toggle listing status (activate/deactivate)
+router.patch('/:listingId/toggle-status', authenticate, listingController.toggleListingStatus);
+
 // Emergency path for force updating status when publish doesn't work
-router.post('/:listingId/force-status-update', authenticate, async (req, res) => {
-  try {
-    const { listingId } = req.params;
-    const { status, forceUpdate } = req.body;
-    
-    console.log(`EMERGENCY: Force updating listing ${listingId} status to ${status}, requested by user ${req.user?.id}`);
-    
-    if (!status) {
-      return res.status(400).json({
-        success: false,
-        error: 'Status is required'
-      });
-    }
-    
-    // Get database models
-    const db = require('../models');
-    const Listing = db.Listing;
-    
-    // Find the listing
-    const listing = await Listing.findOne({
-      where: {
-        id: listingId,
-        hostId: req.user.id
-      }
-    });
-    
-    if (!listing) {
-      return res.status(404).json({
-        success: false,
-        error: 'Listing not found or you are not authorized'
-      });
-    }
-    
-    // Force update the status directly, bypassing normal validation
-    await listing.update({ 
-      status: status,
-    }, {
-      // Skip validation if forceUpdate is true
-      validate: !forceUpdate 
-    });
-    
-    res.json({
-      success: true,
-      message: `Listing status forcefully updated to ${status}`,
-      data: {
-        id: listing.id,
-        status: status
-      }
-    });
-  } catch (error) {
-    console.error('Emergency status update failed:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to force update listing status',
-      details: error.message
-    });
-  }
-});
+router.post('/:listingId/force-status-update', authenticate, listingController.forceUpdateStatus);
 
 // Direct update endpoint for fallback
 router.post('/:listingId/direct-update', authenticate, listingController.directUpdateListing);
