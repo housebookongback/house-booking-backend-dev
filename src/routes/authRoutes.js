@@ -55,5 +55,10 @@ router.post('/login', validateRequest(loginSchema), authController.login);
 router.get('/verify/:token', authController.verifyEmail);
 router.post('/forgot-password', validateRequest(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validateRequest(resetPasswordSchema), authController.resetPassword);
+router.post('/google', authController.googleAuth);
+router.get('/google/url', authController.getGoogleAuthURL);
+// Add this new route
+router.get('/google/callback', authController.handleGoogleCallback);
+router.post('/checking', authController.checkEmailAndPassword);
 
-module.exports = router; 
+module.exports = router;

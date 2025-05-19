@@ -22,6 +22,7 @@
 const db = require('../models');
 const PropertyType = db.PropertyType;
 const Listing = db.Listing;
+console.log("listing",Listing)
 const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
@@ -38,81 +39,50 @@ const listingController = {
     // Public routes
     getAllListings: async (req, res) => {
         try {
-            const {
-                page = 1,
-                limit = 10,
-                sortBy = 'createdAt',
-                sortOrder = 'DESC',
-                categoryId,
-                locationId,
-                minPrice,
-                maxPrice,
-                minRating,
-                instantBookable
-            } = req.query;
-
-            // Build query options
-            const queryOptions = {
-                where: {
-                    status: 'published',
-                    isActive: true
-                },
-                include: [
-                    {
-                        model: db.Photo,
-                        as: 'photos',
-                        where: { isCover: true },
-                        required: false
-                    },
-                    {
-                        model: db.Location,
-                        as: 'locationDetails',
-                        attributes: ['id', 'name', 'slug']
-                    },
-                    {
-                        model: db.Category,
-                        as: 'category',
-                        attributes: ['id', 'name', 'slug'],
-                        required: false
-                    }
-                ],
-                order: [[sortBy, sortOrder]],
-                limit: parseInt(limit),
-                offset: (parseInt(page) - 1) * parseInt(limit)
-            };
-
-            // Add filters if provided
-            if (categoryId) queryOptions.where.categoryId = categoryId;
-            if (locationId) queryOptions.where.locationId = locationId;
-            if (minPrice) queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
-            if (maxPrice) queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.lte]: maxPrice };
-            if (minRating) queryOptions.where.averageRating = { [Op.gte]: minRating };
-            if (instantBookable) queryOptions.where.instantBookable = instantBookable === 'true';
-
-            // Get listings and total count
-            const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
-
-            res.json({
-                success: true,
-                data: {
-                    listings,
-                    pagination: {
-                        total: count,
-                        page: parseInt(page),
-                        limit: parseInt(limit),
-                        totalPages: Math.ceil(count / parseInt(limit))
-                    }
-                }
-            });
+          const listings = await Listing.findAll({
+            include: [
+              {
+                model: db.Photo,
+                as: 'photos',
+                where: { isCover: true, isActive: true, status: 'approved' },
+                required: false,
+              },
+              {
+                model: db.Location,
+                as: 'locationDetails',
+                attributes: ['id', 'name', 'slug'],
+                where: { isActive: true },
+                required: false,
+              },
+              {
+                model: db.Category,
+                as: 'category',
+                attributes: ['id', 'name', 'slug'],
+                where: { isActive: true },
+                required: false,
+              },
+            ],
+            logging: console.log,
+          });
+      
+          console.log('Fetched listings:', listings.length);
+      
+          res.json({
+            success: true,
+            data: {
+              listings,
+              total: listings.length,
+            },
+          });
         } catch (error) {
-            console.error('Error fetching listings:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to fetch listings'
-            });
+          console.error('Error fetching listings:', error);
+          res.status(500).json({
+            success: false,
+            error: 'Failed to fetch listings',
+            details: error.message,
+          });
         }
-    },
-
+      },
     // Step 1: Basic Information
     getPropertyTypes: async (req, res) => {
         try {
