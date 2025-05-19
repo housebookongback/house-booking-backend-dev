@@ -2,6 +2,7 @@
 /**
  * ✅ Final Step Reminder: Publishing a Listing
  * ------------------------------------------------
+ * 
  * 🔹 Once all steps are completed (basicInfo → calendar)
  *    - Ensure stepStatus flags are all true
  * 🔹 Call: POST /api/listings/:listingId/publish
@@ -84,6 +85,7 @@ module.exports = (sequelize, DataTypes) => {
             if (this.status === 'published' && !value) {
               throw new Error('Location is required for published listings');
             }
+            // For draft listings, locationId can be null
           }
         }
       },
@@ -237,7 +239,7 @@ module.exports = (sequelize, DataTypes) => {
         defaultValue: false
       },
       status: {
-        type: DataTypes.ENUM('draft','published','archived'),
+        type: DataTypes.ENUM('draft','published','archived','deleted'),
         allowNull: false,
         defaultValue: 'draft'
       },
@@ -467,6 +469,15 @@ module.exports = (sequelize, DataTypes) => {
   
       // Reports
       Listings.hasMany(models.Report,            { foreignKey: 'listingId', as: 'reports' });
+
+      // Wishlist
+      Listings.hasMany(models.Wishlist, { foreignKey: 'listingId', as: 'savedByUsers' });
+      Listings.belongsToMany(models.User, {
+        through: models.Wishlist,
+        foreignKey: 'listingId',
+        otherKey: 'userId',
+        as: 'usersWhoWishlisted'
+      });
     };
   
     return Listings;

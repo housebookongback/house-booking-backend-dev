@@ -204,7 +204,13 @@ module.exports = (sequelize, DataTypes) => {
             rejectedById: this.rejectedById,
             rejectionReason: this.rejectionReason,
             expiresAt: this.expiresAt,
-            metadata: this.metadata
+            metadata: this.metadata,
+            hostId: this.hostId,
+            host: this.host ? {
+                id: this.host.id,
+                email: this.host.email,
+                name: this.host.name
+            } : null
         };
     };
 

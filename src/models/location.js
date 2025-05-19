@@ -36,7 +36,21 @@ module.exports = (sequelize, DataTypes) => {
             type: DataTypes.STRING,
             allowNull: true,
             unique: true,
-        }
+        },
+        /* These fields are not yet in the database
+        city: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        state: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        country: {
+            type: DataTypes.STRING,
+            allowNull: true
+        },
+        */
     }, {
         tableName: 'Locations',
         timestamps: true,

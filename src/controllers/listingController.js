@@ -33,6 +33,16 @@ const Location = db.Location;
 const PropertyRule = db.PropertyRule;
 const Amenity = db.Amenity;
 const Category = db.Category;
+const fs = require('fs');
+
+// Add this function just before the listingController object
+// Helper function to replace blob URLs with proper HTTP URLs
+const generatePhotoUrl = (blobUrl, photoId) => {
+  if (!blobUrl || !blobUrl.startsWith('blob:')) {
+    return blobUrl;
+  }
+  return `https://via.placeholder.com/800x600?text=Photo+${photoId.substring(0, 8)}`;
+};
 
 const listingController = {
     // Public routes
@@ -401,7 +411,7 @@ const listingController = {
     // Step 2: Location
     updateLocation: async (req, res) => {
         const { listingId } = req.params;
-        const { address, coordinates } = req.body;
+        const { address, coordinates, locationName, addressObject } = req.body;
 
         console.log('Location update request:', JSON.stringify({ 
             listingId, 
@@ -471,27 +481,83 @@ const listingController = {
                 coordinates: [parsedCoordinates.lng, parsedCoordinates.lat]
             };
 
+            // Create a unique slug from the address for location
+            const baseSlug = address.toLowerCase()
+                .replace(/[^a-z0-9]+/g, '-')
+                .replace(/(^-|-$)/g, '');
+
+            // First, attempt to find existing location with similar coordinates
+            // This helps prevent duplicate locations
+            let locationId = null;
+            let existingLocation = null;
+
             try {
-                // First try to create a Location record if needed
-                let locationId = null;
-                try {
+                // Look for an existing location near these coordinates
+                existingLocation = await db.Location.findOne({
+                    where: {
+                        name: locationName || address
+                    }
+                    // Don't specify attributes since city/state/country don't exist
+                });
+
+                if (!existingLocation) {
+                    // Try to find by approximate coordinates (within small radius)
+                    // This is a simplified approach - in a real app, you'd use a geospatial query
+                    const nearbyLocations = await db.Location.findAll({});
+                    
+                    // Find the closest location (if any exists and is very close)
+                    if (nearbyLocations && nearbyLocations.length > 0) {
+                        for (const loc of nearbyLocations) {
+                            if (loc.slug && loc.slug.includes(baseSlug)) {
+                                existingLocation = loc;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // If we found an existing location, use its ID
+                if (existingLocation) {
+                    console.log(`Found existing location: ${existingLocation.id} - ${existingLocation.name}`);
+                    locationId = existingLocation.id;
+                } else {
+                    // Create a new Location record if no matches found
                     const location = await db.Location.create({
-                        name: address,
+                        name: locationName || address,
                         description: `Location for listing ${listing.title}`,
+                        slug: baseSlug,
+                        isActive: true
+                        // Remove city, state, country fields as they don't exist in the database
+                    });
+                    console.log(`Created new location with ID: ${location.id}`);
+                    locationId = location.id;
+                }
+            } catch (locError) {
+                console.error('Error handling location:', locError);
+                
+                // Even if location creation fails, create a basic one to ensure we have a locationId
+                try {
+                    console.log('Attempting to create simplified location as fallback');
+                    const fallbackLocation = await db.Location.create({
+                        name: `Location at ${parsedCoordinates.lat.toFixed(4)}, ${parsedCoordinates.lng.toFixed(4)}`,
+                        description: `Location for listing ${listing.id}`,
+                        slug: `location-${Date.now()}`,
                         isActive: true
                     });
-                    locationId = location.id;
-                } catch (locError) {
-                    console.log('Optional location creation skipped:', locError.message);
-                    // Continue even if this fails - it's optional
+                    locationId = fallbackLocation.id;
+                } catch (fallbackError) {
+                    console.error('Fallback location creation failed:', fallbackError);
+                    // Continue without locationId as last resort
                 }
-                
-                // Update listing with location data
+            }
+
+            // Update listing with all available location data
+            try {
                 await listing.update({
-                    locationId: locationId, // May be null if creation failed
+                    locationId: locationId, // Critical: Link to the Location record
                     address: addressObj,
                     coordinates: parsedCoordinates,
-                    location: locationPoint, // Add GeoJSON format if model expects it
+                    location: locationPoint,
                     step: 2,
                     stepStatus: {
                         ...listing.stepStatus,
@@ -514,28 +580,35 @@ const listingController = {
             } catch (updateError) {
                 console.error('Error updating location fields:', updateError);
                 
-                // If the update fails, try a simpler update without the GeoJSON point
-                await listing.update({
-                    address: addressObj,
-                    coordinates: parsedCoordinates,
-                    step: 2,
-                    stepStatus: {
-                        ...listing.stepStatus,
-                        location: true
-                    }
-                });
+                // If the update fails, try a simpler update
+                try {
+                    await listing.update({
+                        locationId: locationId, // Still include locationId even in simplified update
+                        address: addressObj,
+                        coordinates: parsedCoordinates,
+                        step: 2,
+                        stepStatus: {
+                            ...listing.stepStatus,
+                            location: true
+                        }
+                    });
 
-                return res.json({
-                    success: true,
-                    message: 'Location updated successfully (simplified)',
-                    data: {
-                        id: listing.id,
-                        address: listing.address,
-                        coordinates: listing.coordinates,
-                        step: listing.step,
-                        stepStatus: listing.stepStatus
-                    }
-                });
+                    return res.json({
+                        success: true,
+                        message: 'Location updated successfully (simplified)',
+                        data: {
+                            id: listing.id,
+                            locationId: locationId,
+                            address: listing.address,
+                            coordinates: listing.coordinates,
+                            step: listing.step,
+                            stepStatus: listing.stepStatus
+                        }
+                    });
+                } catch (finalError) {
+                    console.error('Final update attempt failed:', finalError);
+                    throw finalError; // Let the outer catch handle this
+                }
             }
             
         } catch (error) {
@@ -773,17 +846,39 @@ const listingController = {
 
             console.log(`Final decision: Setting photo at index ${coverIndex} as cover image`);
 
+            // Generate UUIDs for photo IDs
+            const { v4: uuidv4 } = require('uuid');
+
             // Create photo records
             const photos = await Promise.all(files.map(async (file, index) => {
                 const rawPath = file.path;
                 const normalized = rawPath.split(path.sep).join('/');
-                const publicUrl = `${req.protocol}://${req.get('host')}/${normalized}`;
+                
+                // Make sure we create a proper URL from the file path
+                let publicUrl;
+                if (file && file.path && fs.existsSync(file.path)) {
+                  // Normalize to forward slashes for URLs
+                  const normalized = file.path.split(path.sep).join('/');
+                  // Remove everything before 'uploads' to get a relative path
+                  const uploadsIndex = normalized.indexOf('uploads');
+                  const relativePath = uploadsIndex !== -1 ? normalized.substring(uploadsIndex) : normalized;
+                  // Always use localhost:3000 for uploads
+                  publicUrl = `http://localhost:3000/${relativePath}`;
+                } else {
+                  // Only fallback to placeholder if file is missing
+                  publicUrl = `https://via.placeholder.com/800x600?text=Photo+${photoId ? photoId.substring(0, 8) : 'missing'}`;
+                }
+                
                 const caption = req.body[`caption_${index}`] || '';
                 const isCover = index === coverIndex;
+                
+                // Generate UUID for the photo
+                const photoId = uuidv4();
 
-                console.log(`Creating photo record for index ${index}, isCover=${isCover}`);
+                console.log(`Creating photo record for index ${index}, isCover=${isCover}, id=${photoId}`);
 
                 return Photo.create({
+                    id: photoId, // Use UUID instead of auto-increment
                     listingId: listing.id,
                     url: publicUrl,
                     fileType: file.mimetype,
@@ -893,19 +988,41 @@ const listingController = {
             console.log(`Adding photos with starting display order: ${startDisplayOrder}`);
             console.log(`Cover photo exists: ${hasCoverPhoto}, Make new cover: ${makeCover}, Cover index: ${coverIndex}`);
 
+            // Generate UUIDs for each photo
+            const { v4: uuidv4 } = require('uuid');
+
             // Create photo records for new photos
             const newPhotos = await Promise.all(files.map(async (file, index) => {
                 const rawPath = file.path;
                 const normalized = rawPath.split(path.sep).join('/');
-                const publicUrl = `${req.protocol}://${req.get('host')}/${normalized}`;
+                
+                // Make sure we create a proper URL from the file path
+                let publicUrl;
+                if (file && file.path && fs.existsSync(file.path)) {
+                  // Normalize to forward slashes for URLs
+                  const normalized = file.path.split(path.sep).join('/');
+                  // Remove everything before 'uploads' to get a relative path
+                  const uploadsIndex = normalized.indexOf('uploads');
+                  const relativePath = uploadsIndex !== -1 ? normalized.substring(uploadsIndex) : normalized;
+                  // Always use localhost:3000 for uploads
+                  publicUrl = `http://localhost:3000/${relativePath}`;
+                } else {
+                  // Only fallback to placeholder if file is missing
+                  publicUrl = `https://via.placeholder.com/800x600?text=Photo+${photoId ? photoId.substring(0, 8) : 'missing'}`;
+                }
+                
                 const caption = req.body[`caption_${index}`] || '';
                 
                 // Only set a photo as cover if we need to and it's the selected cover index
                 const isCover = makeCover && index === coverIndex;
+                
+                // Generate UUID for the photo
+                const photoId = uuidv4();
 
-                console.log(`Creating photo record for index ${index}, displayOrder=${startDisplayOrder + index}, isCover=${isCover}`);
+                console.log(`Creating photo record for index ${index}, displayOrder=${startDisplayOrder + index}, isCover=${isCover}, id=${photoId}`);
 
                 return Photo.create({
+                    id: photoId, // Use UUID instead of auto-increment
                     listingId: listing.id,
                     url: publicUrl,
                     fileType: file.mimetype,
@@ -919,15 +1036,12 @@ const listingController = {
             
             // If we're setting a new cover photo, unset any existing cover photos
             if (makeCover && hasCoverPhoto && newPhotos.length > 0) {
-                await Photo.update(
-                    { isCover: false },
-                    { 
-                        where: { 
-                            listingId: listing.id,
-                            id: { [db.Sequelize.Op.notIn]: newPhotos.map(p => p.id) }
-                        }
+                // Update each existing photo individually to avoid ID type issues
+                for (const existingPhoto of existingPhotos) {
+                    if (existingPhoto.isCover) {
+                        await existingPhoto.update({ isCover: false });
                     }
-                );
+                }
                 console.log(`Reset cover status for existing photos of listing ${listingId}`);
             }
 
@@ -1827,6 +1941,86 @@ const listingController = {
                 }
             }
 
+            // CRITICAL: Check locationId and try to recover if missing
+            if (!listing.locationId) {
+                console.log(`Listing ${listing.id} is missing locationId before publishing, attempting to recover`);
+                
+                // Attempt to find or create a location based on existing address
+                if (listing.address) {
+                    try {
+                        // First check if there's a newly created location that matches our address
+                        // This can happen in race conditions where locationId hasn't been updated yet
+                        const addressStr = typeof listing.address === 'string' 
+                            ? listing.address 
+                            : `${listing.address.street}, ${listing.address.city}, ${listing.address.country}`;
+                        
+                        // Create a slug for location search/creation
+                        const slug = addressStr.toLowerCase()
+                            .replace(/[^a-z0-9]+/g, '-')
+                            .replace(/(^-|-$)/g, '');
+                            
+                        // Try to find existing location by name or approximate slug match
+                        let location = await db.Location.findOne({
+                            where: { 
+                                [db.Sequelize.Op.or]: [
+                                    { name: addressStr },
+                                    { slug: { [db.Sequelize.Op.like]: `%${slug}%` } }
+                                ]
+                            }
+                            // Don't specify attributes since city/state/country don't exist
+                        });
+                        
+                        // If not found, search all locations for fuzzy match
+                        if (!location) {
+                            // Get all locations and try to find one with similar address components
+                            const allLocations = await db.Location.findAll();
+                            for (const loc of allLocations) {
+                                // Very basic matching - check if significant parts of the names match
+                                if (loc.name.includes(listing.address.city) || 
+                                    loc.name.includes(listing.address.country) ||
+                                    (listing.address.street && loc.name.includes(listing.address.street.split(' ')[0]))) {
+                                    location = loc;
+                                    break;
+                                }
+                            }
+                        }
+                        
+                        // If still not found, create a new one
+                        if (!location) {
+                            location = await db.Location.create({
+                                name: addressStr,
+                                description: `Location for listing ${listing.title}`,
+                                slug: slug,
+                                isActive: true
+                                // Remove city, state, country fields that don't exist in the database
+                            });
+                            console.log(`Created new location with ID: ${location.id}`);
+                        } else {
+                            console.log(`Found existing location: ${location.id} - ${location.name}`);
+                        }
+                        
+                        // Update the listing with the location ID
+                        await listing.update({ locationId: location.id });
+                        console.log(`Updated listing ${listing.id} with locationId ${location.id}`);
+                    } catch (locError) {
+                        console.error('Failed to create/find location:', locError);
+                        
+                        if (!forcePublish) {
+                            return res.status(400).json({
+                                success: false,
+                                error: 'Missing locationId and unable to create a location',
+                                details: locError.message
+                            });
+                        }
+                    }
+                } else if (!forcePublish) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Missing address information required for location'
+                    });
+                }
+            }
+
             // Attempt to publish the listing
             try {
                 await listing.update({
@@ -2240,17 +2434,20 @@ const listingController = {
                             }
                         );
                         
-                        // Then set the selected photo as cover
-                        await db.Photo.update(
-                            { isCover: true },
-                            { 
-                                where: { 
-                                    id: updateData.featuredPhotoId,
-                                    listingId: listingId
-                                }
+                        // Then set the selected photo as cover - using string ID comparison
+                        const photoToUpdate = await db.Photo.findOne({
+                            where: { 
+                                id: updateData.featuredPhotoId,
+                                listingId: listingId
                             }
-                        );
-                        console.log(`Successfully set photo ${updateData.featuredPhotoId} as featured`);
+                        });
+                        
+                        if (photoToUpdate) {
+                            await photoToUpdate.update({ isCover: true });
+                            console.log(`Successfully set photo ${updateData.featuredPhotoId} as featured`);
+                        } else {
+                            console.error(`Photo ${updateData.featuredPhotoId} not found for listing ${listingId}`);
+                        }
                     } catch (featuredError) {
                         console.error(`Error setting featured photo:`, featuredError);
                     }
@@ -2261,34 +2458,63 @@ const listingController = {
                     try {
                         console.log(`Updating all photos for listing ${listingId}`);
                         
-                        // First delete all existing photos not in the new set
-                        const newPhotoIds = updateData.photos.map(p => p.id).filter(Boolean);
-                        if (newPhotoIds.length > 0) {
-                            await db.Photo.destroy({
-                                where: {
-                                    listingId: listingId,
-                                    id: { [db.Sequelize.Op.notIn]: newPhotoIds }
-                                },
-                                force: true
-                            });
+                        // Process each photo individually instead of bulk operations
+                        // First, find all existing photos
+                        const existingPhotos = await db.Photo.findAll({
+                            where: {
+                                listingId: listingId
+                            }
+                        });
+                        
+                        // Get IDs of photos in the update request
+                        const newPhotoIds = updateData.photos.map(p => p.id);
+                        console.log('New photo IDs:', newPhotoIds);
+                        
+                        // Find photos to delete (photos that exist but aren't in the update)
+                        const photosToDelete = existingPhotos.filter(
+                            existingPhoto => !newPhotoIds.includes(existingPhoto.id.toString())
+                        );
+                        
+                        // Delete photos that aren't in the update
+                        if (photosToDelete.length > 0) {
+                            for (const photoToDelete of photosToDelete) {
+                                await photoToDelete.destroy({ force: true });
+                            }
+                            console.log(`Deleted ${photosToDelete.length} photos`);
                         }
                         
                         // Then update each photo's data
                         for (const photo of updateData.photos) {
                             if (photo.id) {
-                                await db.Photo.update(
-                                    {
+                                const existingPhoto = await db.Photo.findOne({
+                                    where: { 
+                                        id: photo.id,
+                                        listingId: listingId
+                                    }
+                                });
+                                
+                                if (existingPhoto) {
+                                    await existingPhoto.update({
                                         isCover: !!photo.isCover,
                                         caption: photo.caption || '',
                                         displayOrder: photo.displayOrder || 0
-                                    },
-                                    { 
-                                        where: { 
-                                            id: photo.id,
-                                            listingId: listingId
-                                        }
-                                    }
-                                );
+                                    });
+                                } else if (photo.file) {
+                                    // This is a new photo being added
+                                    // Convert blob URL to a proper URL format using our helper
+                                    const photoUrl = generatePhotoUrl(photo.url, photo.id);
+                                    
+                                    await db.Photo.create({
+                                        id: photo.id, // Ensure we use the provided ID
+                                        listingId: listingId,
+                                        url: photoUrl,
+                                        isCover: !!photo.isCover,
+                                        caption: photo.caption || '',
+                                        displayOrder: photo.displayOrder || 0,
+                                        fileType: 'image/jpeg', // Default
+                                        fileSize: 1024 // Default size in bytes
+                                    });
+                                }
                             }
                         }
                         console.log(`Photo updates completed`);
@@ -2846,14 +3072,19 @@ const listingController = {
             
             // Begin transaction to update all photos atomically
             await db.sequelize.transaction(async (t) => {
-                // First, set all photos of this listing to not be cover
-                await Photo.update(
-                    { isCover: false },
-                    { 
-                        where: { listingId },
-                        transaction: t
-                    }
-                );
+                // First, get all photos to update
+                const allPhotos = await Photo.findAll({
+                    where: { listingId },
+                    transaction: t
+                });
+                
+                // Update each photo individually to ensure proper handling of string IDs
+                for (const p of allPhotos) {
+                    await p.update(
+                        { isCover: false },
+                        { transaction: t }
+                    );
+                }
                 
                 // Then set the selected photo as cover
                 await photo.update(
