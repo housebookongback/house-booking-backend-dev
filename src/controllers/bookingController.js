@@ -2,6 +2,7 @@ const db = require('../models');
 const { ValidationError } = require('sequelize');
 const { Op } = require('sequelize');
 const sequelize = require('sequelize');
+const notificationService = require('../services/notificationService');
 
 const bookingController = {
     createBookingRequest: async (req, res) => {
@@ -134,6 +135,19 @@ const bookingController = {
                 status: 'pending'
             });
 
+            // Add notification for host
+            await notificationService.createBookingNotification({
+                userId: listing.hostId,
+                type: 'info',
+                title: 'New Booking Request',
+                message: `You have a new booking request from ${req.user.name} for ${listing.title}`,
+                metadata: {
+                    bookingRequestId: bookingRequest.id,
+                    listingId: listing.id,
+                    guestId: req.user.id
+                }
+            });
+
             // 8. Send response
             return res.status(201).json({
                 success: true,
@@ -250,7 +264,32 @@ const bookingController = {
                         }
                     );
 
+                    // Notify guest about approval
+                    await notificationService.createBookingNotification({
+                        userId: bookingRequest.guestId,
+                        type: 'success',
+                        title: 'Booking Request Approved',
+                        message: `Your booking request for ${bookingRequest.listing.title} has been approved`,
+                        metadata: {
+                            bookingRequestId: bookingRequest.id,
+                            bookingId: booking.id,
+                            listingId: bookingRequest.listingId
+                        }
+                    });
+
                     return { bookingRequest, booking };
+                } else if (status === 'rejected') {
+                    // Notify guest about rejection
+                    await notificationService.createBookingNotification({
+                        userId: bookingRequest.guestId,
+                        type: 'warning',
+                        title: 'Booking Request Rejected',
+                        message: `Your booking request for ${bookingRequest.listing.title} has been rejected`,
+                        metadata: {
+                            bookingRequestId: bookingRequest.id,
+                            listingId: bookingRequest.listingId
+                        }
+                    });
                 }
 
                 return { bookingRequest };
@@ -281,9 +320,7 @@ const bookingController = {
         }
     },
     updateBookingStatus: async (req, res) => {
-        
         const { id } = req.params;
-       
         const { status, reason } = req.body;
         const hostId = req.user.id;
 
@@ -299,7 +336,6 @@ const bookingController = {
             // Start a transaction
             const result = await db.sequelize.transaction(async (t) => {
                 // Find the booking
-               
                 const booking = await db.Booking.findOne({
                     where: { 
                         id: id,
@@ -315,8 +351,6 @@ const bookingController = {
                 if (!booking) {
                     throw new Error('Booking not found');
                 }
-
-                
 
                 // Validate status transition
                 const currentStatus = booking.status;
@@ -346,6 +380,66 @@ const bookingController = {
                             transaction: t
                         }
                     );
+
+                    // Notify both guest and host about cancellation
+                    await notificationService.createBookingNotification({
+                        userId: booking.guestId,
+                        type: 'warning',
+                        title: 'Booking Cancelled',
+                        message: `Your booking for ${booking.listing.title} has been cancelled`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId,
+                            reason: reason
+                        }
+                    });
+
+                    await notificationService.createBookingNotification({
+                        userId: booking.hostId,
+                        type: 'warning',
+                        title: 'Booking Cancelled',
+                        message: `A booking for ${booking.listing.title} has been cancelled`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId,
+                            reason: reason
+                        }
+                    });
+                } else if (status === 'confirmed') {
+                    // Notify guest about confirmation
+                    await notificationService.createBookingNotification({
+                        userId: booking.guestId,
+                        type: 'success',
+                        title: 'Booking Confirmed',
+                        message: `Your booking for ${booking.listing.title} has been confirmed`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId
+                        }
+                    });
+                } else if (status === 'completed') {
+                    // Notify both guest and host about completion
+                    await notificationService.createBookingNotification({
+                        userId: booking.guestId,
+                        type: 'success',
+                        title: 'Stay Completed',
+                        message: `Your stay at ${booking.listing.title} has been completed`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId
+                        }
+                    });
+
+                    await notificationService.createBookingNotification({
+                        userId: booking.hostId,
+                        type: 'success',
+                        title: 'Stay Completed',
+                        message: `A guest has completed their stay at ${booking.listing.title}`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId
+                        }
+                    });
                 }
 
                 return booking;
@@ -363,8 +457,6 @@ const bookingController = {
             });
 
         } catch (error) {
-           
-           
             console.error('Error updating booking status:', error);
             return res.status(500).json({
                 success: false,

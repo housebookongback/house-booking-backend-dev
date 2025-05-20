@@ -18,8 +18,9 @@ const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
-const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
-
+const adminRoutes = require('./routes/adminRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const searchRoutes = require('./routes/searchRoutes');
 const app = express();
 
 /* ───────────── Global middleware ───────────── */
@@ -56,7 +57,9 @@ app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/host', hostRoutes);
 app.use('/api/guest', guestRoutes);
-app.use('/api/admin', adminRoutes); // Add admin routes
+app.use('/api/admin', adminRoutes); 
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/search', searchRoutes);
 
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {

@@ -22,6 +22,7 @@
 const db = require('../models');
 const PropertyType = db.PropertyType;
 const Listing = db.Listing;
+console.log(Listing,"listingsssssssssssssssssss22222222222");
 const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
