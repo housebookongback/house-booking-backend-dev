@@ -12,6 +12,7 @@ async function seedBookingModels() {
     await db.Booking.destroy({ where: {} });
     await db.PriceRule.destroy({ where: {} });
     await db.SeasonalPricing.destroy({ where: {} });
+    await db.Wishlist.destroy({ where: {} }); // Add Wishlist cleanup
 
     // Fetch existing listings, guests, and hosts
     const listings = await db.Listing.scope('all').findAll({ raw: true });
@@ -165,37 +166,89 @@ async function seedBookingModels() {
 
     // Create booking calendars for each listing
     const bookingCalendars = [];
-    for (const listingId of listingIds) {
-      // Create calendar entries for the next 90 days
-      const startDate = new Date();
-      for (let i = 0; i < 90; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
+    const usedDates = new Set(); // Utiliser un Set pour un meilleur suivi des dates uniques
+
+    for (const booking of createdBookings) {
+      const currentDate = new Date(booking.checkIn);
+      const endDate = new Date(booking.checkOut);
+      const numberOfDays = Math.ceil((endDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+      const basePrice = parseFloat((booking.totalPrice / numberOfDays).toFixed(2));
+      
+      while (currentDate < endDate) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        const uniqueKey = `${booking.listingId}-${dateStr}`;
         
-        bookingCalendars.push({
-          listingId,
-          date,
-          isAvailable: faker.datatype.boolean(),
-          basePrice: faker.number.float({ min: 50, max: 500, precision: 0.01 }),
-          minStay: faker.number.int({ min: 1, max: 3 }),
-          maxStay: faker.number.int({ min: 7, max: 30 }),
-          checkInAllowed: faker.datatype.boolean(),
-          checkOutAllowed: faker.datatype.boolean(),
-          notes: faker.datatype.boolean() ? faker.lorem.sentence() : null,
-          metadata: {
-            lastUpdatedBy: 'system',
-            reason: 'initial_seed'
-          },
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+        if (!usedDates.has(uniqueKey)) {
+          usedDates.add(uniqueKey);
+          
+          // Vérifier si la date est valide
+          const calendarDate = new Date(dateStr);
+          if (!isNaN(calendarDate.getTime())) {
+            bookingCalendars.push({
+              listingId: booking.listingId,
+              date: calendarDate,
+              isAvailable: false,
+              bookingId: booking.id,
+              basePrice: basePrice,
+              price: basePrice,
+              minStay: faker.number.int({ min: 1, max: 3 }),
+              maxStay: faker.number.int({ min: 7, max: 30 }),
+              checkInAllowed: true,
+              checkOutAllowed: true,
+              notes: faker.datatype.boolean() ? faker.lorem.sentence() : null,
+              metadata: {},
+              createdAt: new Date(),
+              updatedAt: new Date()
+            });
+          }
+        }
+        
+        // Avancer d'un jour
+        currentDate.setDate(currentDate.getDate() + 1);
       }
     }
 
-    await db.BookingCalendar.bulkCreate(bookingCalendars);
+    // Utiliser ignoreDuplicates pour éviter les erreurs de clés dupliquées
+    await db.BookingCalendar.bulkCreate(bookingCalendars, {
+      ignoreDuplicates: true
+    });
 
     // await transaction.commit();
-    console.log('Booking models seeded successfully');
+    // Create wishlists
+    const wishlists = [];
+    const usedWishlistKeys = new Set(); // Pour suivre les combinaisons uniques userId-listingId
+
+    for (const guestId of guestIds) {
+      // Créer 1-3 wishlists par invité
+      const numWishlists = faker.number.int({ min: 1, max: 3 });
+      const availableListings = [...listingIds]; // Copie des IDs de listing disponibles
+
+      for (let i = 0; i < numWishlists && availableListings.length > 0; i++) {
+        // Sélectionner et retirer un listing aléatoire
+        const randomIndex = faker.number.int({ min: 0, max: availableListings.length - 1 });
+        const listingId = availableListings.splice(randomIndex, 1)[0];
+        
+        const wishlistKey = `${guestId}-${listingId}`;
+        
+        if (!usedWishlistKeys.has(wishlistKey)) {
+          usedWishlistKeys.add(wishlistKey);
+          wishlists.push({
+            userId: guestId,
+            listingId: listingId,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
+      }
+    }
+
+    // Utiliser ignoreDuplicates pour éviter les erreurs de clés dupliquées
+    await db.Wishlist.bulkCreate(wishlists, {
+      ignoreDuplicates: true
+    });
+
+    // await transaction.rollback();
+    console.log('Booking models and wishlists seeded successfully');
   } catch (error) {
     // await transaction.rollback();
     console.error('Error seeding booking models:', error);

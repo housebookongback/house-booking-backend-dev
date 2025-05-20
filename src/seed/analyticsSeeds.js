@@ -80,7 +80,7 @@ async function seedAnalyticsModels() {
     await db.ClickCount.bulkCreate(clickCounts);
     await db.ViewCount.bulkCreate(viewCounts);
 
-    console.log('Modèles Analytics générés avec succès');
+    console.log('seeded succes ,analiticsSeeds.js');
   } catch (error) {
     console.error('Erreur lors de la génération des modèles Analytics:', error);
     throw error;

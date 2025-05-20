@@ -25,8 +25,6 @@ async function seedAll() {
     console.log('✅ Verification models seeded');
 
     // Host management models
-    await hostSeeds();
-    console.log('✅ Host models seeded');
 
     // Property related models
     await propertySeeds();
@@ -39,7 +37,9 @@ async function seedAll() {
     // Booking and pricing models
     await bookingSeeds();
     console.log('✅ Booking models seeded');
-
+    
+    await hostSeeds();
+    console.log('✅ Host models seeded');
     // Payment related models
     await paymentSeeds();
     console.log('✅ Payment models seeded');
