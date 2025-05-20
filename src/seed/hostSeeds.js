@@ -217,5 +217,5 @@ async function getAllHostProfiles() {
   }
 }
 
-// seedHostModels();
+seedHostModels();
 module.exports = seedHostModels;

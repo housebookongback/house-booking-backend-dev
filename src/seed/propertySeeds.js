@@ -158,8 +158,8 @@ async function seedPropertyModels() {
       const selectedLocation = faker.helpers.arrayElement(createdLocations);
       const title = faker.lorem.sentence();
       return {
-        userId: selectedHost.userId, // Changed from selectedHost.user.id to selectedHost.userId
-        hostId: selectedHost.userId, // Changed from selectedHost.user.id to selectedHost.userId
+        userId: selectedHost.userId,
+        hostId: selectedHost.userId,
         propertyTypeId: faker.helpers.arrayElement(createdPropertyTypes).id,
         locationId: selectedLocation.id,
         title: title,
@@ -175,12 +175,25 @@ async function seedPropertyModels() {
         accommodates: faker.number.int({ min: 1, max: 10 }),
         beds: faker.number.int({ min: 1, max: 8 }),
         isActive: true,
-        status: 'draft',
+        status: 'draft', // Keep as draft until all required data is set
         instantBookable: false,
-        minimumNights: 1,
-        cancellationPolicy: 'moderate',
+        minimumNights: faker.number.int({ min: 1, max: 3 }),
+        maximumNights: faker.number.int({ min: 7, max: 30 }),
+        cancellationPolicy: faker.helpers.arrayElement(['flexible', 'moderate', 'strict']),
         views: 0,
         reviewCount: 0,
+        stepStatus: {
+          basicInfo: false,
+          location: false,
+          details: false,
+          pricing: false,
+          photos: false,
+          rules: false,
+          calendar: false
+        },
+        defaultAvailability: true,
+        checkInDays: [0,1,2,3,4,5,6],
+        checkOutDays: [0,1,2,3,4,5,6],
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -188,20 +201,7 @@ async function seedPropertyModels() {
 
     const createdListings = await db.Listing.bulkCreate(listings);
 
-    // Seed ListingAmenities
-    const listingAmenities = createdListings.flatMap(listing => 
-      faker.helpers.arrayElements(createdAmenities, faker.number.int({ min: 3, max: 8 }))
-        .map(amenity => ({
-          listingId: listing.id,
-          amenityId: amenity.id,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }))
-    );
-
-    await db.ListingAmenities.bulkCreate(listingAmenities);
-
-    // Seed PropertyRules
+    // Create property rules first
     const propertyRules = createdListings.flatMap(listing => {
       const ruleTypes = [
         'check_in',
@@ -246,6 +246,35 @@ async function seedPropertyModels() {
     });
 
     await db.PropertyRule.bulkCreate(propertyRules);
+
+    // Now update listings to published status after rules are created
+    await Promise.all(createdListings.map(listing => 
+      listing.update({
+        status: 'published',
+        stepStatus: {
+          basicInfo: true,
+          location: true,
+          details: true,
+          pricing: true,
+          photos: true,
+          rules: true,
+          calendar: true
+        }
+      })
+    ));
+
+    // Seed ListingAmenities
+    const listingAmenities = createdListings.flatMap(listing => 
+      faker.helpers.arrayElements(createdAmenities, faker.number.int({ min: 3, max: 8 }))
+        .map(amenity => ({
+          listingId: listing.id,
+          amenityId: amenity.id,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }))
+    );
+
+    await db.ListingAmenities.bulkCreate(listingAmenities);
 
     // Seed PropertyAvailability
     const propertyAvailabilities = [];
@@ -330,30 +359,6 @@ async function seedPropertyModels() {
   }
 }
 
-// seedPropertyModels()
-async function logSeededListings() {
-  try {
-    const listings = await db.Listing.scope('all').findAll({ raw: true })
-    
-    console.log(`✅ Seeded Listings Count: ${listings.length}`);
-    
-    if (listings.length > 0) {
-      console.log('📋 Listings Details:', listings.map((listing) => ({
-        id: listing.id,
-        title: listing.title,
-        address: listing.address,
-        locationId: listing.locationId,
-        hostId: listing.hostId,
-      })));
-    } else {
-      console.warn('⚠️ No listings found. Please check your seeder.');
-    }
-  } catch (error) {
-    console.error('❌ Error fetching seeded listings:', error.message);
-  }
-}
-// seedPropertyModels()
-// logSeededListings();
 module.exports = seedPropertyModels;
 
 
