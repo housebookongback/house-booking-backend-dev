@@ -1,7 +1,11 @@
-const bcrypt = require('bcrypt');
+
+const { OAuth2Client } = require('google-auth-library');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');  // Add this import at the top
 const db = require('../models');
 const { generateToken } = require('../middleware/jwtUtils');
-const { ValidationError } = require('sequelize');
+const { ValidationError, Op } = require('sequelize');
 
 /**
  * Register a new user
@@ -27,34 +31,29 @@ const register = async (req, res) => {
             email,
             passwordHash,
             phone,
-            isVerified: false,
+            isVerified: true,
             status: 'active'
         });
-
-        // Generate verification token
-        const verificationToken = await user.generateVerificationToken();
-
-        // TODO: Send verification email
-        // await sendVerificationEmail(user.email, verificationToken);
 
         // Generate JWT token
         const token = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: 'user' // Default role for new users
         });
 
         // Return user data (excluding sensitive information)
         res.status(201).json({
             message: 'Registration successful',
-            user: {
+            data:{user: {
                 id: user.id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
-                isVerified: user.isVerified
+                isVerified: user.isVerified,
+                role: 'user' // Default role for new users
             },
-            token
+            token}
         });
     } catch (error) {
         if (error instanceof ValidationError) {
@@ -82,8 +81,19 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Find user
-        const user = await db.User.findOne({ where: { email } });
+        // Find user with their roles included
+        const user = await db.User.findOne({
+            where: { email },
+            include: [
+                {
+                    model: db.Role,
+                    as: 'roles',
+                    attributes: ['name'],
+                    through: { attributes: [] } // Don't include junction table attributes
+                }
+            ]
+        });
+
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -102,25 +112,42 @@ const login = async (req, res) => {
         // Update last login
         await user.update({ lastLogin: new Date() });
 
-        // Generate JWT token
+        // Determine the primary role
+        let primaryRole = 'user';  // Default role
+        
+        // Check roles array from the association
+        if (user.roles && user.roles.length > 0) {
+            // If user has multiple roles, prioritize in this order: admin > host > user
+            const roleNames = user.roles.map(role => role.name);
+            
+            if (roleNames.includes('admin')) {
+                primaryRole = 'admin';
+            } else if (roleNames.includes('host')) {
+                primaryRole = 'host';
+            }
+            
+            console.log('User roles:', roleNames, 'Primary role:', primaryRole);
+        }
+
+        // Generate JWT token with the primary role
         const token = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: primaryRole
         });
 
-        // Return user data
+        // Return user data with primary role
         res.json({
             message: 'Login successful',
-            user: {
+           data: {user: {
                 id: user.id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
                 isVerified: user.isVerified,
-                role: user.role
+                role: primaryRole
             },
-            token
+            token}
         });
     } catch (error) {
         console.error('Login error:', error);
@@ -170,7 +197,7 @@ const forgotPassword = async (req, res) => {
 
         const user = await db.User.findOne({ where: { email } });
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({data:{ message: 'User not found' }});
         }
 
         // Generate reset token
@@ -179,10 +206,10 @@ const forgotPassword = async (req, res) => {
         // TODO: Send reset email
         // await sendPasswordResetEmail(user.email, resetToken);
 
-        res.json({ message: 'Password reset instructions sent to your email' });
+        res.json({data:{ message: 'Password reset instructions sent to your email' }});
     } catch (error) {
         console.error('Password reset request error:', error);
-        res.status(500).json({ message: 'Error processing password reset request' });
+        res.status(500).json({data:{ message: 'Error processing password reset request' }});
     }
 };
 
@@ -202,7 +229,7 @@ const resetPassword = async (req, res) => {
         });
 
         if (!user) {
-            return res.status(400).json({ message: 'Invalid or expired reset token' });
+            return res.status(400).json({data:{ message: 'Invalid or expired reset token' }});
         }
 
         // Hash new password
@@ -216,10 +243,10 @@ const resetPassword = async (req, res) => {
             passwordResetExpires: null
         });
 
-        res.json({ message: 'Password reset successful' });
+        res.json({data:{ message: 'Password reset successful' }});
     } catch (error) {
         console.error('Password reset error:', error);
-        res.status(500).json({ message: 'Error resetting password' });
+        res.status(500).json({data:{ message: 'Error resetting password' }});
     }
 };
 
@@ -244,10 +271,234 @@ const validatePassword = (password) => {
     }
 };
 
+
+// Initialize Google OAuth client
+
+
+// Google Sign In/Sign Up
+/**
+ * Handle Google OAuth authentication
+ * @route POST /api/auth/google
+ */
+
+
+const oauth2Client = new OAuth2Client(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+);
+
+/**
+ * Get Google OAuth URL
+ * @route GET /api/auth/google/url
+ */
+const getGoogleAuthURL = (req, res) => {
+    const scopes = [
+        'https://www.googleapis.com/auth/userinfo.profile',
+        'https://www.googleapis.com/auth/userinfo.email'
+    ];
+
+    const url = oauth2Client.generateAuthUrl({
+        access_type: 'offline',
+        scope: scopes,
+        include_granted_scopes: true
+    });
+
+    res.json({data:{ url }});
+};
+
+/**
+ * Handle Google OAuth callback
+ * @route GET /api/auth/google/callback
+ */
+const handleGoogleCallback = async (req, res) => {
+    try {
+        const { code } = req.query;
+        
+        if (!code) {
+            return res.redirect(`http://localhost:5173/login?error=${encodeURIComponent('Authorization code is required')}`);
+        }
+
+        // Exchange the authorization code for tokens
+        const { tokens } = await oauth2Client.getToken(code);
+        oauth2Client.setCredentials(tokens);
+
+        // Get user info using the access token
+        const ticket = await oauth2Client.verifyIdToken({
+            idToken: tokens.id_token,
+            audience: process.env.GOOGLE_CLIENT_ID
+        });
+
+        const payload = ticket.getPayload();
+        
+        // Check if user exists
+        let user = await db.User.findOne({ where: { email: payload.email } });
+        
+        if (!user) {
+            // Create new user if doesn't exist
+            const randomPassword = crypto.randomBytes(32).toString('hex');
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash(randomPassword, salt);
+            
+            user = await db.User.create({
+                name: payload.name,
+                email: payload.email,
+                isVerified: true,
+                emailVerifiedAt: new Date(),
+                status: 'active',
+                googleId: payload.sub,
+                picture: payload.picture,
+                passwordHash: passwordHash
+            });
+        }
+
+        // Generate JWT token
+        const jwtToken = generateToken({
+            id: user.id,
+            email: user.email,
+            role: user.role,
+            isVerified: user.isVerified
+        });
+
+        // Redirect to frontend with token
+        return res.redirect(302, `http://localhost:5173/auth/callback?token=${encodeURIComponent(jwtToken)}`);
+
+    } catch (error) {
+        console.error('Google callback error details:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code
+        });
+        
+        // Redirect to login page with error
+        return res.redirect(`http://localhost:5173/login?error=${encodeURIComponent('Failed to authenticate with Google')}`);
+    }
+};
+const googleAuth = async (req, res) => {
+    try {
+        const { token } = req.body;
+        
+        const ticket = await oauth2Client.verifyIdToken({
+            idToken: token,
+            audience: process.env.GOOGLE_CLIENT_ID
+        });
+
+        const payload = ticket.getPayload();
+        
+        // Check if user exists
+        let user = await db.User.findOne({ where: { email: payload.email } });
+        
+        if (!user) {
+            // Create new user if doesn't exist
+            user = await db.User.create({
+                name: payload.name,
+                email: payload.email,
+                isVerified: true,
+                emailVerifiedAt: new Date(),
+                status: 'active',
+                googleId: payload.sub,
+                picture: payload.picture
+            });
+        } else if (!user.googleId) {
+            // Link Google account to existing user
+            await user.update({
+                googleId: payload.sub,
+                picture: payload.picture
+            });
+        }
+
+        // Generate JWT token
+        const jwtToken = generateToken({
+            id: user.id,
+            email: user.email,
+            role: user.role
+        });
+
+        res.json({
+            token: jwtToken,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                isVerified: user.isVerified,
+                role: user.role
+            }
+        });
+    } catch (error) {
+        console.error('Google authentication error:', error);
+        res.status(500).json({ message: 'Failed to authenticate with Google' });
+    }
+};
+const checkEmailAndPassword = async (req, res) => {
+    try {
+        const { email, password, confirmPassword } = req.body;
+
+        // Check if email exists first
+        const existingUser = await db.User.findOne({ where: { email } });
+        
+        // If email doesn't exist, return early
+        if (!existingUser) {
+            return res.json({data:{
+                success: true,
+                exists: false,
+                message: 'Email available'
+            }});
+        }
+
+        // Only check passwords if email exists and passwords are provided
+        if (password && confirmPassword) {
+            // Check if passwords match
+            if (password !== confirmPassword) {
+                return res.status(400).json({data:{
+                    success: false,
+                    message: 'Passwords do not match'
+                }});
+            }
+
+            // Validate password strength
+            try {
+                validatePassword(password);
+            } catch (error) {
+                return res.status(400).json({data:{
+                    success: false,
+                    message: error.message
+                }});
+            }
+        }
+
+        // Return email exists response
+        return res.json({data:{
+            success: true,
+            exists: true,
+            message: 'Email already registered'
+        }});
+
+    } catch (error) {
+        console.error('Email and password check error:', error);
+        return res.status(500).json({data:{
+            success: false,
+            message: 'Error checking email and password'
+        }});
+    }
+};
+// Add handleGoogleCallback to module exports
 module.exports = {
+    googleAuth,
     register,
     login,
     verifyEmail,
     forgotPassword,
-    resetPassword
-}; 
+    resetPassword,
+    getGoogleAuthURL,
+    handleGoogleCallback ,
+    checkEmailAndPassword
+};
+
+
+/**
+ * Check email existence and validate password match
+ * @route POST /api/auth/check-email-password
+ */
+
+
+// Add to module exports

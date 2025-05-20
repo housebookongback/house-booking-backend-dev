@@ -1,6 +1,7 @@
+
 const { Sequelize } = require('sequelize');
 const config = require('./config');
-
+console.log("configggggggggggg",config)
 const sequelize = new Sequelize(
     config.database.name,
     config.database.username,

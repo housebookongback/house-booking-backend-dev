@@ -20,34 +20,16 @@ router.get('/', listingController.getAllListings);
 // GET /property-types - Get all available property types
 // Returns: Array of property types with id, name, and icon
 router.get('/property-types', listingController.getPropertyTypes);
-
-// GET /categories - Get all available categories
-// Returns: Array of category objects with id, name, and description
 router.get('/categories', listingController.getCategories);
-
-// GET /amenities - Get all available amenities
-// Returns: Array of amenity objects with id, name, description, and icon
-router.get('/amenities', listingController.getAmenities);
-
-// GET /:listingId - Get detailed information about a specific listing
-// Returns: Full listing details including photos, amenities, host info, rules, etc.
-router.get('/:listingId', listingController.getSingleListing);
-
-// GET /:listingId/availability - Check listing availability for specific dates
-// Query params: startDate, endDate, numberOfGuests
-router.get('/:listingId/availability', listingController.getAvailability);
-
-/**
- * Protected Routes - Listing Creation Flow
- * Requires authentication (valid JWT token)
- */
-
-// POST /draft - Create a new draft listing
-// Body: title, description, propertyTypeId
 router.post('/draft', authenticate, listingController.createDraftListing);
+// Add route for updating basic info
+router.patch('/:listingId/basic-info', authenticate, listingController.updateBasicInfo);
 
 // PATCH /:listingId/location - Update listing location (Step 2)
-// Body: address, coordinates (lat, lng)
+// Body: 
+//   - address (string or object {street, city, country})
+//   - coordinates (object with lat, lng)
+//   - locationName (optional, helps with location record matching)
 router.patch('/:listingId/location', authenticate, listingController.updateLocation);
 
 // PATCH /:listingId/details - Update listing details (Step 3)
@@ -62,21 +44,32 @@ router.patch('/:listingId/pricing', authenticate, listingController.updatePricin
 // Body: multipart/form-data with photos
 router.patch('/:listingId/photos', authenticate, uploadMultiple, listingController.updatePhotos);
 
-// PATCH /:listingId/rules - Update listing rules (Step 6)
-// Body: Array of rules [{ title, description, isRequired }]
+// Set a specific photo as featured/cover
+router.put('/:listingId/photos/:photoId/feature', authenticate, listingController.setPhotoAsFeatured);
+
+// Delete a specific photo
+router.delete('/:listingId/photos/:photoId', authenticate, listingController.deletePhoto);
+
+// Add new photos to an existing listing
+router.post('/:listingId/photos', authenticate, uploadMultiple, listingController.addPhotos);
+
+// Get all available amenities - Make this endpoint public
+router.get('/amenities', listingController.getAmenities);
+
+// Amenities Update
+router.patch('/:listingId/amenities', authenticate, listingController.updateAmenities);
+router.patch('/:listingId/amenities-simple', authenticate, listingController.updateAmenitiesSimple);
+
+// Step 6: Rules
 router.patch('/:listingId/rules', authenticate, listingController.updateRules);
+router.patch('/:listingId/rules-simple', authenticate, listingController.updateRulesSimple);
 
 // PATCH /:listingId/calendar - Update listing calendar (Step 7)
 // Body: Array of calendar entries [{ date, isAvailable, price }]
 router.patch('/:listingId/calendar', authenticate, listingController.updateCalendar);
+router.get('/:listingId/calendar', listingController.getCalendar);
 
-/**
- * Protected Routes - Listing Management
- * Requires authentication (valid JWT token)
- */
-
-// PATCH /:listingId/step-status - Update listing step completion status
-// Body: { step, stepStatus }
+// Step Status Management
 router.patch('/:listingId/step-status', authenticate, listingController.updateStepStatus);
 
 // GET /:listingId/step-status - Get current listing step completion status
@@ -87,12 +80,28 @@ router.get('/:listingId/step-status', authenticate, listingController.getStepSta
 // Changes status from 'draft' to 'published' if all steps are complete
 router.patch('/:listingId/publish', authenticate, listingController.publishListing);
 
-// PATCH /:listingId/status - Toggle listing active/inactive status
-// Body: { status: 'active' | 'inactive' }
-router.patch('/:listingId/status', authenticate, listingController.toggleListingStatus);
+// Toggle listing status (activate/deactivate)
+router.patch('/:listingId/toggle-status', authenticate, listingController.toggleListingStatus);
 
-// DELETE /:listingId - Soft delete a listing
-// Only allowed if no active bookings exist
+// Emergency path for force updating status when publish doesn't work
+router.post('/:listingId/force-status-update', authenticate, listingController.forceUpdateStatus);
+
+// Direct update endpoint for fallback
+router.post('/:listingId/direct-update', authenticate, listingController.directUpdateListing);
+
+// check availability for booking
+router.get('/:listingId/availability',  listingController.getAvailability);
+
+// get all listings
+router.get('/', listingController.getAllListings);
+
+// Utility route - schema check and fix (protect with admin auth later)
+router.get('/admin/check-schema', listingController.checkAndFixSchema);
+
+// get single listing by id
+router.get('/:listingId', authenticate, listingController.getListingById);
+
+// delete listing
 router.delete('/:listingId', authenticate, listingController.deleteListing);
 
 module.exports = router; 
