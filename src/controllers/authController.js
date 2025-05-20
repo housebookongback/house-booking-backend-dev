@@ -5,7 +5,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');  // Add this import at the top
 const db = require('../models');
 const { generateToken } = require('../middleware/jwtUtils');
-const { ValidationError } = require('sequelize');
+const { ValidationError, Op } = require('sequelize');
 
 /**
  * Register a new user
@@ -39,20 +39,21 @@ const register = async (req, res) => {
         const token = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: 'user' // Default role for new users
         });
 
         // Return user data (excluding sensitive information)
         res.status(201).json({
             message: 'Registration successful',
-            user: {
+            data:{user: {
                 id: user.id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
-                isVerified: user.isVerified
+                isVerified: user.isVerified,
+                role: 'user' // Default role for new users
             },
-            token
+            token}
         });
     } catch (error) {
         if (error instanceof ValidationError) {
@@ -80,8 +81,19 @@ const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        // Find user
-        const user = await db.User.findOne({ where: { email } });
+        // Find user with their roles included
+        const user = await db.User.findOne({
+            where: { email },
+            include: [
+                {
+                    model: db.Role,
+                    as: 'roles',
+                    attributes: ['name'],
+                    through: { attributes: [] } // Don't include junction table attributes
+                }
+            ]
+        });
+
         if (!user) {
             return res.status(401).json({ message: 'Invalid credentials' });
         }
@@ -100,25 +112,42 @@ const login = async (req, res) => {
         // Update last login
         await user.update({ lastLogin: new Date() });
 
-        // Generate JWT token
+        // Determine the primary role
+        let primaryRole = 'user';  // Default role
+        
+        // Check roles array from the association
+        if (user.roles && user.roles.length > 0) {
+            // If user has multiple roles, prioritize in this order: admin > host > user
+            const roleNames = user.roles.map(role => role.name);
+            
+            if (roleNames.includes('admin')) {
+                primaryRole = 'admin';
+            } else if (roleNames.includes('host')) {
+                primaryRole = 'host';
+            }
+            
+            console.log('User roles:', roleNames, 'Primary role:', primaryRole);
+        }
+
+        // Generate JWT token with the primary role
         const token = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: primaryRole
         });
 
-        // Return user data
+        // Return user data with primary role
         res.json({
             message: 'Login successful',
-            user: {
+           data: {user: {
                 id: user.id,
                 name: user.name,
                 email: user.email,
                 phone: user.phone,
                 isVerified: user.isVerified,
-                role: user.role
+                role: primaryRole
             },
-            token
+            token}
         });
     } catch (error) {
         console.error('Login error:', error);
@@ -168,7 +197,7 @@ const forgotPassword = async (req, res) => {
 
         const user = await db.User.findOne({ where: { email } });
         if (!user) {
-            return res.status(404).json({ message: 'User not found' });
+            return res.status(404).json({data:{ message: 'User not found' }});
         }
 
         // Generate reset token
@@ -177,10 +206,10 @@ const forgotPassword = async (req, res) => {
         // TODO: Send reset email
         // await sendPasswordResetEmail(user.email, resetToken);
 
-        res.json({ message: 'Password reset instructions sent to your email' });
+        res.json({data:{ message: 'Password reset instructions sent to your email' }});
     } catch (error) {
         console.error('Password reset request error:', error);
-        res.status(500).json({ message: 'Error processing password reset request' });
+        res.status(500).json({data:{ message: 'Error processing password reset request' }});
     }
 };
 
@@ -200,7 +229,7 @@ const resetPassword = async (req, res) => {
         });
 
         if (!user) {
-            return res.status(400).json({ message: 'Invalid or expired reset token' });
+            return res.status(400).json({data:{ message: 'Invalid or expired reset token' }});
         }
 
         // Hash new password
@@ -214,10 +243,10 @@ const resetPassword = async (req, res) => {
             passwordResetExpires: null
         });
 
-        res.json({ message: 'Password reset successful' });
+        res.json({data:{ message: 'Password reset successful' }});
     } catch (error) {
         console.error('Password reset error:', error);
-        res.status(500).json({ message: 'Error resetting password' });
+        res.status(500).json({data:{ message: 'Error resetting password' }});
     }
 };
 
@@ -244,7 +273,7 @@ const validatePassword = (password) => {
 
 
 // Initialize Google OAuth client
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 
 // Google Sign In/Sign Up
 /**
@@ -275,7 +304,7 @@ const getGoogleAuthURL = (req, res) => {
         include_granted_scopes: true
     });
 
-    res.json({ url });
+    res.json({data:{ url }});
 };
 
 /**
@@ -409,47 +438,47 @@ const checkEmailAndPassword = async (req, res) => {
         
         // If email doesn't exist, return early
         if (!existingUser) {
-            return res.json({
+            return res.json({data:{
                 success: true,
                 exists: false,
                 message: 'Email available'
-            });
+            }});
         }
 
         // Only check passwords if email exists and passwords are provided
         if (password && confirmPassword) {
             // Check if passwords match
             if (password !== confirmPassword) {
-                return res.status(400).json({
+                return res.status(400).json({data:{
                     success: false,
                     message: 'Passwords do not match'
-                });
+                }});
             }
 
             // Validate password strength
             try {
                 validatePassword(password);
             } catch (error) {
-                return res.status(400).json({
+                return res.status(400).json({data:{
                     success: false,
                     message: error.message
-                });
+                }});
             }
         }
 
         // Return email exists response
-        return res.json({
+        return res.json({data:{
             success: true,
             exists: true,
             message: 'Email already registered'
-        });
+        }});
 
     } catch (error) {
         console.error('Email and password check error:', error);
-        return res.status(500).json({
+        return res.status(500).json({data:{
             success: false,
             message: 'Error checking email and password'
-        });
+        }});
     }
 };
 // Add handleGoogleCallback to module exports

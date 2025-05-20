@@ -119,7 +119,7 @@ async function seedHostModels() {
         hostId: hostProfile.userId,
         title: faker.lorem.words(3),
         description: faker.lorem.paragraph(),
-        status: 'draft',  // Always use draft for seeds to avoid validation requirements
+        status: 'published',  // Always use draft for seeds to avoid validation requirements
         minimumNights: 1,
         maximumNights: 1,
         cancellationPolicy: 'moderate',
@@ -217,5 +217,5 @@ async function getAllHostProfiles() {
   }
 }
 
-// seedHostModels();
+seedHostModels();
 module.exports = seedHostModels;
