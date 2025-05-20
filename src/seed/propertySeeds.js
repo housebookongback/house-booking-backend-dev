@@ -201,7 +201,34 @@ async function seedPropertyModels() {
 
     const createdListings = await db.Listing.bulkCreate(listings);
 
-    // Create property rules first
+    // Create photos for each listing before creating rules
+    const photos = createdListings.flatMap((listing, listingIndex) => {
+      // Create multiple photos per listing
+      return Array.from({ length: faker.number.int({ min: 3, max: 8 }) }).map((_, index) => ({
+        id: listingIndex * 100 + index + 1, // Génère un ID unique pour chaque photo
+        listingId: listing.id,
+        url: faker.image.url(),
+        thumbnailUrl: faker.image.url(),
+        fileType: 'image/jpeg',
+        fileSize: faker.number.int({ min: 500000, max: 5000000 }),
+        width: 1920,
+        height: 1080,
+        caption: faker.lorem.sentence(),
+        category: faker.helpers.arrayElement(['exterior', 'interior', 'bedroom', 'bathroom', 'kitchen', 'living_room', 'view']),
+        isCover: index === 0,
+        displayOrder: index,
+        status: 'approved',
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }));
+    });
+
+    await db.Photo.bulkCreate(photos, {
+      ignoreDuplicates: true
+    });
+
+    // Create property rules
     const propertyRules = createdListings.flatMap(listing => {
       const ruleTypes = [
         'check_in',
@@ -358,7 +385,7 @@ async function seedPropertyModels() {
     throw error;
   }
 }
-
+// seedPropertyModels()
 module.exports = seedPropertyModels;
 
 

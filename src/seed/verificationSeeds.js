@@ -6,6 +6,7 @@ async function seedVerificationModels() {
     // Clean existing data
     await db.Document.destroy({ where: {} });
     await db.Verification.destroy({ where: {} });
+    await db.HostProfile.destroy({ where: {} });
 
     // Récupérer les IDs des utilisateurs existants
     const existingUsers = await db.User.findAll({
@@ -16,6 +17,47 @@ async function seedVerificationModels() {
     if (userIds.length === 0) {
       throw new Error('No users found. Please run user seeds first.');
     }
+
+    // Seed Host Profiles
+    const usedUserIds = new Set(); // Pour suivre les IDs déjà utilisés
+    const hostProfiles = Array.from({ length: 5 }).map(() => {
+      let userId;
+      // Trouver un userId non utilisé
+      do {
+        userId = faker.helpers.arrayElement(userIds);
+      } while (usedUserIds.has(userId));
+      
+      usedUserIds.add(userId);
+
+      return {
+        userId,
+        displayName: faker.person.fullName(),
+        bio: faker.lorem.paragraph(),
+        profilePicture: faker.image.avatar(),
+        phoneNumber: faker.phone.number('+1##########'),
+        preferredLanguage: faker.helpers.arrayElement(['en', 'es', 'fr', 'de', 'it']),
+        responseTime: faker.number.int({ min: 1, max: 24 }),
+        responseRate: faker.number.float({ min: 70, max: 100, precision: 0.01 }),
+        isSuperhost: faker.datatype.boolean(),
+        superhostSince: faker.date.past(),
+        verificationStatus: faker.helpers.arrayElement(['unverified', 'pending', 'verified', 'rejected']),
+        verificationDocuments: {},
+        notificationPreferences: {
+          email: faker.datatype.boolean(),
+          sms: faker.datatype.boolean(),
+          push: faker.datatype.boolean(),
+          bookingRequests: faker.datatype.boolean(),
+          messages: faker.datatype.boolean(),
+          reviews: faker.datatype.boolean(),
+          updates: faker.datatype.boolean()
+        },
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+
+    await db.HostProfile.bulkCreate(hostProfiles);
 
     // Seed Verifications
     const verifications = Array.from({ length: 10 }).map(() => ({
@@ -48,7 +90,7 @@ async function seedVerificationModels() {
 
     await db.Document.bulkCreate(documents);
 
-    console.log('Verification models seeded successfully');
+    console.log('Verification models and host profiles seeded successfully');
   } catch (error) {
     console.error('Error seeding verification models:', error);
     throw error;

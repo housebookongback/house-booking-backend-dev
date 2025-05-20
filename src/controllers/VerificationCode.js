@@ -125,8 +125,8 @@ const sendEmail = async (req, res) => {
       port: 587, // or 465 for SSL
       secure: false, // true for 465, false for other ports
       auth: {
-        user: "benromdhannebochra@gmail.com", // Replace with your email
-        pass: "rski necj vtnj axos",    // Replace with your password
+        user:process.env.EMAIL_USER, // Replace with your email
+        pass:process.env.PASS    // Replace with your password
       },
     });
 
