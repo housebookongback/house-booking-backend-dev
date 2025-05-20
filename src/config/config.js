@@ -1,5 +1,5 @@
-require('dotenv').config({path:"../../.env"});
-
+require('dotenv').config();
+console.log("envvvvvvvvvvvvvvvvv",process.env.DATABASE_HOST)
 module.exports = {
     port: process.env.PORT,
     database: {
