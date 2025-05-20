@@ -17,6 +17,7 @@ const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const verify  = require('./routes/VerificationCodeRoutes')
+const hostApplicationRoutes = require('./routes/hostApplicationRoutes');
 const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
@@ -29,13 +30,21 @@ app.use(helmet({
 })); // Security headers with CORP configuration
 
 app.use(cors({
-  origin: 'http://localhost:5173' || 'http://localhost:3000' ,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+    origin: '*', // Allow all origins during development
+    credentials: true      // Allow cookies/sessions
 }));
 app.use(morgan('dev')); // Logging
 app.use(express.json({ limit: '10kb' })); // Parse JSON bodies with size limit
+
+/* ───────────── Static files with CORS headers ───────────── */
+// Configure CORS headers specifically for static files in uploads directory
+app.use('/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static('uploads'));
 
 /* ───────────── Health check ───────────── */
 app.get('/', (_, res) =>
@@ -55,12 +64,12 @@ db.init()
     console.error('❌  Database connection failed:', error);
   });
 
-  app.use('/uploads', express.static('uploads'));
 /* ───────────── API routes ───────────── */
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use("/api/verify", verify)
+app.use('/api/host', hostApplicationRoutes);
 app.use('/api/host', hostRoutes);
 app.use('/api/guest', guestRoutes);
 app.use('/api/admin', adminRoutes); // Add admin routes

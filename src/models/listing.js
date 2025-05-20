@@ -85,6 +85,7 @@ module.exports = (sequelize, DataTypes) => {
             if (this.status === 'published' && !value) {
               throw new Error('Location is required for published listings');
             }
+            // For draft listings, locationId can be null
           }
         }
       },
@@ -346,6 +347,11 @@ module.exports = (sequelize, DataTypes) => {
         },
         async hasRulesIfPublished() {
             if (this.status === 'published') {
+                // Skip validation if not changing status to 'published'
+                if (!this.changed('status') || this.previous('status') === 'published') {
+                    return;
+                }
+                
                 const rules = await this.getPropertyRules();
                 if (rules.length === 0) {
                     throw new Error('At least one property rule is required for published listings');
