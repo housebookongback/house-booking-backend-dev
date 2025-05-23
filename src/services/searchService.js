@@ -1,5 +1,5 @@
 const { Op, literal } = require('sequelize');
-const { Listing, Location, PropertyType, RoomType, Amenity, Photo, Review, User, BookingCalendar } = require('../models');
+const { Listing, Location, PropertyType, RoomType, Amenity, Photo, Review, User, BookingCalendar, Category } = require('../models');
 const { sequelize } = require('../models');
 const NodeCache = require('node-cache');
 
@@ -21,6 +21,7 @@ const searchService = {
             amenities,
             instantBook,
             superhostOnly,
+            categories,
             page = 1,
             limit = 20,
             sort = 'relevance',
@@ -69,6 +70,11 @@ const searchService = {
 
         const offset = (page - 1) * limit;
         const where = { status: 'published' };
+
+        // Add category filtering
+        if (categories && categories.length > 0) {
+            where.categoryId = { [Op.in]: categories };
+        }
 
         // Text search with safe parameter binding
         if (query) {
@@ -270,6 +276,14 @@ const searchService = {
                     as: 'host',
                     required: false,
                     attributes: ['id']
+                },
+                {
+                    model: Category,
+                    as: 'category',
+                    required: false,
+                    where: {
+                        isActive: true
+                    }
                 }
             ],
             offset,

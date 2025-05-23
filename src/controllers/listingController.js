@@ -54,7 +54,7 @@ const listingController = {
                 limit = 10,
                 sortBy = 'createdAt',
                 sortOrder = 'DESC',
-                categoryId,
+                categories,
                 locationId,
                 minPrice,
                 maxPrice,
@@ -62,6 +62,8 @@ const listingController = {
                 instantBookable,
                 host
             } = req.query;
+
+            console.log('Received query parameters:', req.query);
 
             // Build query options
             const queryOptions = {
@@ -101,15 +103,23 @@ const listingController = {
             };
 
             // Add filters if provided
-            if (categoryId) queryOptions.where.categoryId = categoryId;
+            if (categories) {
+                const categoryIds = categories.split(',').map(id => parseInt(id.trim()));
+                console.log('Filtering by category IDs:', categoryIds);
+                queryOptions.where.categoryId = { [Op.in]: categoryIds };
+            }
             if (locationId) queryOptions.where.locationId = locationId;
             if (minPrice) queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
             if (maxPrice) queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.lte]: maxPrice };
             if (minRating) queryOptions.where.averageRating = { [Op.gte]: minRating };
             if (instantBookable) queryOptions.where.instantBookable = instantBookable === 'true';
 
+            console.log('Final query options:', JSON.stringify(queryOptions, null, 2));
+
             // Get listings and total count
             const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
+
+            console.log('Query results - count:', count, 'listings:', listings.length);
 
             res.json({
                 success: true,

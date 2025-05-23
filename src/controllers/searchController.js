@@ -1,15 +1,16 @@
 const { sequelize } = require('../models');
 const searchService = require('../services/searchService');
 const db = require('../models');
+const { Op } = require('sequelize');
 
 const searchController = {
     // Basic search with filters
     search: async (req, res) => {
         try {
-            const searchParams = req.query;
-            console.log('Received search params:', searchParams);
-            console.log('Check-in date type:', typeof searchParams.checkIn);
-            console.log('Check-out date type:', typeof searchParams.checkOut);
+            const searchParams = {
+                ...req.query,
+                categories: req.query.categories?.split(',').map(Number)
+            };
             
             const query = await searchService.buildSearchQuery(searchParams);
             const sortedQuery = searchService.sortResults(query, searchParams.sort);
