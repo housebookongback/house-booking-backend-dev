@@ -1,5 +1,14 @@
 const { faker } = require('@faker-js/faker');
-const db = require('../models')
+const { 
+  Listing, 
+  Photo, 
+  Location, 
+  PropertyType, 
+  PropertyRule, 
+  Amenity, 
+  Category,
+  ListingAmenities 
+} = require('../models');
 
 // Map prédéfinie pour les types de chambres
 const ROOM_TYPES = new Map([
@@ -57,283 +66,174 @@ const AMENITIES = new Map([
   ['gym', 'Salle de sport']
 ]);
 
-async function seedPropertyModels() {
+async function seedProperty() {
   try {
     // Clean existing data
-    await db.PropertyAvailability.destroy({ where: {}, force: true });
-    await db.PropertyPolicy.destroy({ where: {}, force: true });
-    await db.PropertyRule.destroy({ where: {}, force: true });
-    await db.Photo.destroy({ where: {}, force: true });
-    await db.ListingAmenities.destroy({ where: {}, force: true });
-    await db.Listing.destroy({ where: {}, force: true });
-    await db.Amenity.destroy({ where: {}, force: true });
-    await db.Location.destroy({ where: {}, force: true });
-    await db.Category.destroy({ where: {}, force: true });
-    await db.RoomType.destroy({ where: {}, force: true });
-    await db.PropertyType.destroy({ where: {}, force: true });
+    await Listing.destroy({ where: {}, force: true });
+    await Photo.destroy({ where: {}, force: true });
+    await PropertyRule.destroy({ where: {}, force: true });
+    await ListingAmenities.destroy({ where: {}, force: true });
+    await PropertyType.destroy({ where: {}, force: true });
+    await Category.destroy({ where: {}, force: true });
+    await Amenity.destroy({ where: {}, force: true });
+    await Location.destroy({ where: {}, force: true });
 
-    // Seed PropertyTypes
-    // Seed PropertyTypes with predefined values
-    const propertyTypes = Array.from(PROPERTY_TYPES, ([name, description]) => ({
-      name,
-      description,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
+    // Create property types
+    const propertyTypes = await PropertyType.bulkCreate([
+      { name: 'House', icon: 'home' },
+      { name: 'Apartment', icon: 'apartment' },
+      { name: 'Villa', icon: 'villa' },
+      { name: 'Condo', icon: 'apartment' }
+    ]);
 
-    const createdPropertyTypes = await db.PropertyType.bulkCreate(propertyTypes, {
-      ignoreDuplicates: true
-    });
+    // Create categories
+    const categories = await Category.bulkCreate([
+      { name: 'Beach', description: 'Beachfront properties', icon: 'beach_access' },
+      { name: 'Mountain', description: 'Mountain view properties', icon: 'landscape' },
+      { name: 'City', description: 'Urban properties', icon: 'location_city' }
+    ]);
 
-    // Seed RoomTypes
-    // Seed RoomTypes avec des noms uniques
-    const roomTypes = Array.from(ROOM_TYPES, ([name, description]) => ({
-      name,
-      description,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
+    // Create amenities
+    const amenities = await Amenity.bulkCreate([
+      { name: 'WiFi', description: 'Free WiFi', icon: 'wifi' },
+      { name: 'Pool', description: 'Swimming pool', icon: 'pool' },
+      { name: 'Kitchen', description: 'Full kitchen', icon: 'kitchen' },
+      { name: 'Parking', description: 'Free parking', icon: 'local_parking' }
+    ]);
 
-    await db.RoomType.bulkCreate(roomTypes, {
-      ignoreDuplicates: true
-    });
-
-    // Seed Categories
-    // Seed Categories avec des noms uniques
-    const categories = Array.from(CATEGORIES, ([name, description]) => ({
-      name,
-      description,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
-
-    await db.Category.bulkCreate(categories);
-
-    // Seed Locations
-    const locations = Array.from({ length: 10 }).map(() => ({
-      name: faker.location.city(),
-      type: faker.helpers.arrayElement(['city', 'region', 'country']),
-      latitude: faker.location.latitude(),
-      longitude: faker.location.longitude(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
-
-    const createdLocations = await db.Location.bulkCreate(locations);
-
-    // Seed Amenities
-    // Seed Amenities avec des noms uniques
-    const amenities = Array.from(AMENITIES, ([name, description]) => ({
-      name,
-      description,
-      icon: faker.image.url(),
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
-
-    const createdAmenities = await db.Amenity.bulkCreate(amenities, {
-      ignoreDuplicates: true
-    });
-
-    // Seed Listings
-    // Récupérer les IDs des hôtes existants
-    const existingHosts = await db.HostProfile.findAll({ 
-      paranoid: false,
-      include: [{
-        model: db.User,
-        as: 'user'
-      }]
-    });
-
-    if (existingHosts.length === 0) {
-      throw new Error('Aucun hôte trouvé. Veuillez d\'abord exécuter le seed des hôtes.');
-    }
-
-    // Seed Listings avec hostId valide
-    const listings = Array.from({ length: 10 }).map(() => {
-      const selectedHost = faker.helpers.arrayElement(existingHosts);
-      const selectedLocation = faker.helpers.arrayElement(createdLocations);
-      const title = faker.lorem.sentence();
-      return {
-        userId: selectedHost.userId, // Changed from selectedHost.user.id to selectedHost.userId
-        hostId: selectedHost.userId, // Changed from selectedHost.user.id to selectedHost.userId
-        propertyTypeId: faker.helpers.arrayElement(createdPropertyTypes).id,
-        locationId: selectedLocation.id,
-        title: title,
-        slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
-        description: faker.lorem.paragraph(),
-        address: faker.location.streetAddress(true),
-        coordinates: `${selectedLocation.latitude},${selectedLocation.longitude}`,
-        price: faker.number.float({ min: 50, max: 1000 }),
-        pricePerNight: faker.number.float({ min: 50, max: 500 }),
-        bedrooms: faker.number.int({ min: 1, max: 5 }),
-        bathrooms: faker.number.int({ min: 1, max: 3 }),
-        maxGuests: faker.number.int({ min: 1, max: 10 }),
-        accommodates: faker.number.int({ min: 1, max: 10 }),
-        beds: faker.number.int({ min: 1, max: 8 }),
-        isActive: true,
-        status: 'draft',
-        instantBookable: false,
-        minimumNights: 1,
-        cancellationPolicy: 'moderate',
-        views: 0,
-        reviewCount: 0,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      };
-    });
-
-    const createdListings = await db.Listing.bulkCreate(listings);
-
-    // Seed ListingAmenities
-    const listingAmenities = createdListings.flatMap(listing => 
-      faker.helpers.arrayElements(createdAmenities, faker.number.int({ min: 3, max: 8 }))
-        .map(amenity => ({
-          listingId: listing.id,
-          amenityId: amenity.id,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        }))
-    );
-
-    await db.ListingAmenities.bulkCreate(listingAmenities);
-
-    // Seed PropertyRules
-    const propertyRules = createdListings.flatMap(listing => {
-      const ruleTypes = [
-        'check_in',
-        'check_out',
-        'quiet_hours',
-        'smoking',
-        'pets',
-        'parties',
-        'children',
-        'visitors',
-        'parking',
-        'amenities',
-        'safety',
-        'other'
-      ];
-
-      return ruleTypes.map((type, index) => ({
-        listingId: listing.id,
-        type: type,
-        title: `${faker.word.adjective()} ${type.replace('_', ' ')} rule`,
-        description: faker.lorem.paragraph(),
-        isAllowed: faker.datatype.boolean(),
-        restrictions: {
-          timeRestrictions: type === 'quiet_hours' ? {
-            start: '22:00',
-            end: '08:00'
-          } : null,
-          ageRestrictions: type === 'children' ? {
-            minimumAge: faker.number.int({ min: 0, max: 18 })
-          } : null,
-          maxCapacity: type === 'visitors' ? {
-            daytime: faker.number.int({ min: 1, max: 10 }),
-            overnight: faker.number.int({ min: 0, max: 5 })
-          } : null
-        },
-        penalty: faker.datatype.boolean() ? `$${faker.number.int({ min: 50, max: 500 })} fee` : null,
-        isActive: true,
-        displayOrder: index,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }));
-    });
-
-    await db.PropertyRule.bulkCreate(propertyRules);
-
-    // Seed PropertyAvailability
-    const propertyAvailabilities = [];
-    for (const listing of createdListings) {
-      // Create availability entries for the next 90 days
-      const startDate = new Date();
-      for (let i = 0; i < 90; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        
-        propertyAvailabilities.push({
-          listingId: listing.id,
-          date: date,
-          isAvailable: faker.datatype.boolean(),
-          price: parseFloat(faker.number.float({ 
-            min: listing.pricePerNight, 
-            max: listing.pricePerNight * 1.5, 
-            precision: 0.01 
-          })).toFixed(2),
-          minimumNights: faker.number.int({ min: 1, max: 3 }),
-          maximumNights: faker.number.int({ min: 7, max: 30 }),
-          checkInTime: '15:00',
-          checkOutTime: '11:00',
-          notes: faker.datatype.boolean() ? faker.lorem.sentence() : null,
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date()
-        });
+    // Create locations
+    const locations = await Location.bulkCreate([
+      { 
+        name: 'Miami Beach',
+        description: 'Beautiful beachfront location',
+        slug: 'miami-beach',
+        isActive: true
+      },
+      {
+        name: 'Aspen',
+        description: 'Mountain resort town',
+        slug: 'aspen',
+        isActive: true
+      },
+      {
+        name: 'New York City',
+        description: 'Urban center',
+        slug: 'new-york-city',
+        isActive: true
       }
-    }
+    ]);
 
-    await db.PropertyAvailability.bulkCreate(propertyAvailabilities);
-
-    // Seed PropertyPolicy
-    const propertyPolicies = createdListings.flatMap(listing => {
-      const policyTypes = [
-        'cancellation',
-        'refund',
-        'house_rules',
-        'check_in',
-        'check_out',
-        'security_deposit',
-        'cleaning',
-        'damage',
-        'liability',
-        'insurance'
-      ];
-
-      return policyTypes.map((type, index) => ({
-        listingId: listing.id,
-        type: type,
-        title: `${faker.word.adjective()} ${type.replace('_', ' ')} policy`,
-        description: faker.lorem.paragraph(),
-        terms: {
-          conditions: faker.lorem.sentences(3),
-          restrictions: faker.lorem.sentences(2)
-        },
-        conditions: {
-          timeLimit: faker.number.int({ min: 24, max: 72 }),
-          requirements: faker.lorem.sentences(2)
-        },
-        exceptions: {
-          cases: faker.lorem.sentences(2),
-          specialCircumstances: faker.lorem.sentence()
-        },
-        lastUpdated: new Date(),
-        version: '1.0',
+    // Create sample listings
+    const listings = await Listing.bulkCreate([
+      {
+        title: 'Beachfront Villa',
+        description: 'Luxurious beachfront villa with ocean views',
+        propertyTypeId: propertyTypes[2].id, // Villa
+        categoryId: categories[0].id, // Beach
+        locationId: locations[0].id, // Miami Beach
+        hostId: 2, // Assuming host user ID is 2
+        status: 'published',
+        pricePerNight: 500,
+        bedrooms: 4,
+        bathrooms: 3,
+        beds: 6,
+        accommodates: 8,
         isActive: true,
-        requiresAgreement: faker.datatype.boolean(),
-        displayOrder: index,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }));
-    });
+        stepStatus: {
+          basicInfo: true,
+          location: true,
+          details: true,
+          pricing: true,
+          photos: true,
+          rules: true,
+          calendar: true
+        }
+      },
+      {
+        title: 'Mountain View Cabin',
+        description: 'Cozy cabin with stunning mountain views',
+        propertyTypeId: propertyTypes[0].id, // House
+        categoryId: categories[1].id, // Mountain
+        locationId: locations[1].id, // Aspen
+        hostId: 2, // Assuming host user ID is 2
+        status: 'published',
+        pricePerNight: 300,
+        bedrooms: 3,
+        bathrooms: 2,
+        beds: 4,
+        accommodates: 6,
+        isActive: true,
+        stepStatus: {
+          basicInfo: true,
+          location: true,
+          details: true,
+          pricing: true,
+          photos: true,
+          rules: true,
+          calendar: true
+        }
+      }
+    ]);
 
-    await db.PropertyPolicy.bulkCreate(propertyPolicies);
+    // Create photos for listings
+    await Photo.bulkCreate([
+      {
+        listingId: listings[0].id,
+        url: 'http://localhost:3000/uploads/sample-beach-villa.jpg',
+        isCover: true,
+        caption: 'Beachfront view',
+        displayOrder: 1
+      },
+      {
+        listingId: listings[1].id,
+        url: 'http://localhost:3000/uploads/sample-mountain-cabin.jpg',
+        isCover: true,
+        caption: 'Mountain view',
+        displayOrder: 1
+      }
+    ]);
 
-    console.log('Property models seeded successfully');
+    // Create property rules
+    await PropertyRule.bulkCreate([
+      {
+        listingId: listings[0].id,
+        type: 'other',
+        title: 'No smoking',
+        description: 'Smoking is not allowed on the property',
+        isAllowed: false,
+        isActive: true,
+        displayOrder: 1
+      },
+      {
+        listingId: listings[1].id,
+        type: 'other',
+        title: 'No pets',
+        description: 'Pets are not allowed',
+        isAllowed: false,
+        isActive: true,
+        displayOrder: 1
+      }
+    ]);
+
+    // Create listing-amenity relationships
+    await ListingAmenities.bulkCreate([
+      { listingId: listings[0].id, amenityId: amenities[0].id }, // WiFi
+      { listingId: listings[0].id, amenityId: amenities[1].id }, // Pool
+      { listingId: listings[1].id, amenityId: amenities[0].id }, // WiFi
+      { listingId: listings[1].id, amenityId: amenities[2].id }  // Kitchen
+    ]);
+
+    console.log('✅ Property models seeded successfully');
   } catch (error) {
-    console.error('Error seeding property models:', error);
+    console.error('❌ Error seeding property models:', error);
     throw error;
   }
 }
 
-// seedPropertyModels()
+// seedProperty()
 async function logSeededListings() {
   try {
-    const listings = await db.Listing.scope('all').findAll({ raw: true })
+    const listings = await Listing.scope('all').findAll({ raw: true })
     
     console.log(`✅ Seeded Listings Count: ${listings.length}`);
     
@@ -352,8 +252,8 @@ async function logSeededListings() {
     console.error('❌ Error fetching seeded listings:', error.message);
   }
 }
-// seedPropertyModels()
+// seedProperty()
 // logSeededListings();
-module.exports = seedPropertyModels;
+module.exports = seedProperty;
 
 

@@ -1,17 +1,25 @@
 const { faker } = require('@faker-js/faker');
-const db = require('../models');
+const { 
+  Booking,
+  BookingRequest,
+  BookingCalendar,
+  BookingChange,
+  BookingCancellation,
+  SeasonalPricing,
+  PriceRule
+} = require('../models');
 console.log("d ")
 async function seedBookingModels() {
   // const transaction = await db.transaction();
   try {
     // Clean existing data
-    await db.BookingCalendar.destroy({ where: {} });
-    await db.BookingCancellation.destroy({ where: {} });
-    await db.BookingChange.destroy({ where: {} });
-    await db.BookingRequest.destroy({ where: {} });
-    await db.Booking.destroy({ where: {} });
-    await db.PriceRule.destroy({ where: {} });
-    await db.SeasonalPricing.destroy({ where: {} });
+    await Booking.destroy({ where: {} });
+    await BookingRequest.destroy({ where: {} });
+    await BookingCalendar.destroy({ where: {} });
+    await BookingChange.destroy({ where: {} });
+    await BookingCancellation.destroy({ where: {} });
+    await SeasonalPricing.destroy({ where: {} });
+    await PriceRule.destroy({ where: {} });
 
     // Fetch existing listings, guests, and hosts
     const listings = await db.Listing.scope('all').findAll({ raw: true });
@@ -49,7 +57,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await db.PriceRule.bulkCreate(priceRules);
+    await PriceRule.bulkCreate(priceRules);
 
     const seasonalPricing = Array.from({ length: 10 }).map(() => ({
       listingId: faker.helpers.arrayElement(listingIds),
@@ -62,7 +70,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await db.SeasonalPricing.bulkCreate(seasonalPricing);
+    await SeasonalPricing.bulkCreate(seasonalPricing);
 
     const bookings = [];
     for (let i = 0; i < 10; i++) {
@@ -87,7 +95,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       });
     }
-    const createdBookings = await db.Booking.bulkCreate(bookings);
+    const createdBookings = await Booking.bulkCreate(bookings);
 
     // Create booking requests
     const bookingRequests = createdBookings
@@ -111,7 +119,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await db.BookingRequest.bulkCreate(bookingRequests);
+    await BookingRequest.bulkCreate(bookingRequests);
 
     // Create booking changes
     const bookingChanges = createdBookings
@@ -143,7 +151,7 @@ async function seedBookingModels() {
         };
       });
 
-    await db.BookingChange.bulkCreate(bookingChanges);
+    await BookingChange.bulkCreate(bookingChanges);
 
     // Create booking cancellations
     const bookingCancellations = createdBookings
@@ -161,7 +169,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await db.BookingCancellation.bulkCreate(bookingCancellations);
+    await BookingCancellation.bulkCreate(bookingCancellations);
 
     // Create booking calendars for each listing
     const bookingCalendars = [];
@@ -192,7 +200,7 @@ async function seedBookingModels() {
       }
     }
 
-    await db.BookingCalendar.bulkCreate(bookingCalendars);
+    await BookingCalendar.bulkCreate(bookingCalendars);
 
     // await transaction.commit();
     console.log('Booking models seeded successfully');

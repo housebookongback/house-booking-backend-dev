@@ -8,9 +8,14 @@ const { uploadMultiple } = require('../middleware/upload');
  * Public Routes - No authentication required
  */
 
-// GET / - Get all published listings with optional filters
+// GET /public - Get all published listings with optional filters for public viewing (no auth required)
 // Query params: page, limit, sortBy, sortOrder, categoryId, locationId, minPrice, maxPrice, minRating, instantBookable
-router.get('/', listingController.getAllListings);
+router.get('/public', listingController.getAllListings);
+
+// GET / - Get all listings with host filtering when host=true (requires authentication)
+// Query params: page, limit, sortBy, sortOrder, categoryId, locationId, minPrice, maxPrice, minRating, instantBookable, host
+// Note: host=true parameter requires authentication and will filter to show only the host's listings
+router.get('/', authenticate, listingController.getAllListings);
 
 /**
  * Property Type, Category, and Amenity Routes
@@ -91,9 +96,6 @@ router.post('/:listingId/direct-update', authenticate, listingController.directU
 
 // check availability for booking
 router.get('/:listingId/availability',  listingController.getAvailability);
-
-// get all listings
-router.get('/', listingController.getAllListings);
 
 // Utility route - schema check and fix (protect with admin auth later)
 router.get('/admin/check-schema', listingController.checkAndFixSchema);

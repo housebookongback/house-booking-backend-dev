@@ -20,6 +20,7 @@ const hostApplicationRoutes = require('./routes/hostApplicationRoutes');
 const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
+const reviewRoutes = require('./routes/reviewRoutes'); // Add review routes
 
 const app = express();
 
@@ -68,6 +69,7 @@ app.use('/api/host', hostApplicationRoutes);
 app.use('/api/host', hostRoutes);
 app.use('/api/guest', guestRoutes);
 app.use('/api/admin', adminRoutes); // Add admin routes
+app.use('/api/reviews', reviewRoutes); // Add review routes
 
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
