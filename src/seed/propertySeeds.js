@@ -1,5 +1,14 @@
 const { faker } = require('@faker-js/faker');
-const db = require('../models')
+const { 
+  Listing, 
+  Photo, 
+  Location, 
+  PropertyType, 
+  PropertyRule, 
+  Amenity, 
+  Category,
+  ListingAmenities 
+} = require('../models');
 
 // Map prédéfinie pour les types de chambres
 const ROOM_TYPES = new Map([
@@ -57,48 +66,32 @@ const AMENITIES = new Map([
   ['gym', 'Salle de sport']
 ]);
 
-async function seedPropertyModels() {
+async function seedProperty() {
   try {
     // Clean existing data
-    await db.PropertyAvailability.destroy({ where: {}, force: true });
-    await db.PropertyPolicy.destroy({ where: {}, force: true });
-    await db.PropertyRule.destroy({ where: {}, force: true });
-    await db.Photo.destroy({ where: {}, force: true });
-    await db.ListingAmenities.destroy({ where: {}, force: true });
-    await db.Listing.destroy({ where: {}, force: true });
-    await db.Amenity.destroy({ where: {}, force: true });
-    await db.Location.destroy({ where: {}, force: true });
-    await db.Category.destroy({ where: {}, force: true });
-    await db.RoomType.destroy({ where: {}, force: true });
-    await db.PropertyType.destroy({ where: {}, force: true });
+    await Listing.destroy({ where: {}, force: true });
+    await Photo.destroy({ where: {}, force: true });
+    await PropertyRule.destroy({ where: {}, force: true });
+    await ListingAmenities.destroy({ where: {}, force: true });
+    await PropertyType.destroy({ where: {}, force: true });
+    await Category.destroy({ where: {}, force: true });
+    await Amenity.destroy({ where: {}, force: true });
+    await Location.destroy({ where: {}, force: true });
 
-    // Seed PropertyTypes
-    // Seed PropertyTypes with predefined values
-    const propertyTypes = Array.from(PROPERTY_TYPES, ([name, description]) => ({
-      name,
-      description,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
+    // Create property types
+    const propertyTypes = await PropertyType.bulkCreate([
+      { name: 'House', icon: 'home' },
+      { name: 'Apartment', icon: 'apartment' },
+      { name: 'Villa', icon: 'villa' },
+      { name: 'Condo', icon: 'apartment' }
+    ]);
 
-    const createdPropertyTypes = await db.PropertyType.bulkCreate(propertyTypes, {
-      ignoreDuplicates: true
-    });
-
-    // Seed RoomTypes
-    // Seed RoomTypes avec des noms uniques
-    const roomTypes = Array.from(ROOM_TYPES, ([name, description]) => ({
-      name,
-      description,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    }));
-
-    await db.RoomType.bulkCreate(roomTypes, {
-      ignoreDuplicates: true
-    });
+    // Create categories
+    const categories = await Category.bulkCreate([
+      { name: 'Beach', description: 'Beachfront properties', icon: 'beach_access' },
+      { name: 'Mountain', description: 'Mountain view properties', icon: 'landscape' },
+      { name: 'City', description: 'Urban properties', icon: 'location_city' }
+    ]);
 
     // Seed Categories
     // Seed Categories avec des noms uniques
@@ -370,18 +363,21 @@ async function seedPropertyModels() {
         lastUpdated: new Date(),
         version: '1.0',
         isActive: true,
-        requiresAgreement: faker.datatype.boolean(),
-        displayOrder: index,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      }));
-    });
+        displayOrder: 1
+      }
+    ]);
 
-    await db.PropertyPolicy.bulkCreate(propertyPolicies);
+    // Create listing-amenity relationships
+    await ListingAmenities.bulkCreate([
+      { listingId: listings[0].id, amenityId: amenities[0].id }, // WiFi
+      { listingId: listings[0].id, amenityId: amenities[1].id }, // Pool
+      { listingId: listings[1].id, amenityId: amenities[0].id }, // WiFi
+      { listingId: listings[1].id, amenityId: amenities[2].id }  // Kitchen
+    ]);
 
-    console.log('Property models seeded successfully');
+    console.log('✅ Property models seeded successfully');
   } catch (error) {
-    console.error('Error seeding property models:', error);
+    console.error('❌ Error seeding property models:', error);
     throw error;
   }
 }

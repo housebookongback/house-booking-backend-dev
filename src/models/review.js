@@ -212,6 +212,12 @@ module.exports = (sequelize, DataTypes) => {
             foreignKey: 'reviewedId',
             as: 'reviewed'
         });
+
+        // Add association to ReviewResponse
+        Review.hasOne(models.ReviewResponse, {
+            foreignKey: 'reviewId',
+            as: 'reviewResponse'
+        });
     };
 
     return Review;

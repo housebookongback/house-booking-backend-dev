@@ -1,4 +1,3 @@
-
 const { OAuth2Client } = require('google-auth-library');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -6,7 +5,14 @@ const crypto = require('crypto');  // Add this import at the top
 const db = require('../models');
 const { generateToken } = require('../middleware/jwtUtils');
 const { ValidationError, Op } = require('sequelize');
-const FacebookStrategy = require('passport-facebook').Strategy;
+
+// Initialize Google OAuth client with credentials from .env
+const oauth2Client = new OAuth2Client(
+  process.env.GOOGLE_CLIENT_ID,
+  process.env.GOOGLE_CLIENT_SECRET,
+  process.env.GOOGLE_REDIRECT_URI
+);
+
 /**
  * Register a new user
  * @route POST /api/auth/register
@@ -43,17 +49,19 @@ const register = async (req, res) => {
         });
 
         // Return user data (excluding sensitive information)
-        res.status(201).json({
+        return res.status(201).json({
             message: 'Registration successful',
-            data:{user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone,
-                isVerified: user.isVerified,
-                role: 'user' // Default role for new users
-            },
-            token}
+            data: {
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    phone: user.phone,
+                    isVerified: user.isVerified,
+                    role: 'user' // Default role for new users
+                },
+                token
+            }
         });
     } catch (error) {
         if (error instanceof ValidationError) {
@@ -66,7 +74,7 @@ const register = async (req, res) => {
             });
         }
         console.error('Registration error:', error);
-        res.status(500).json({ 
+        return res.status(500).json({ 
             message: 'Error registering user',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
@@ -88,7 +96,7 @@ const login = async (req, res) => {
                 {
                     model: db.Role,
                     as: 'roles',
-                    attributes: ['name'],
+                    attributes: ['id', 'name'],
                     through: { attributes: [] } // Don't include junction table attributes
                 }
             ]
@@ -137,21 +145,23 @@ const login = async (req, res) => {
         });
 
         // Return user data with primary role
-        res.json({
+        return res.json({
             message: 'Login successful',
-           data: {user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone,
-                isVerified: user.isVerified,
-                role: primaryRole
-            },
-            token}
+            data: {
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    phone: user.phone,
+                    isVerified: user.isVerified,
+                    role: primaryRole
+                },
+                token
+            }
         });
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ message: 'Error logging in' });
+        return res.status(500).json({ message: 'Error logging in' });
     }
 };
 
@@ -272,21 +282,11 @@ const validatePassword = (password) => {
 };
 
 
-// Initialize Google OAuth client
-
-
 // Google Sign In/Sign Up
 /**
  * Handle Google OAuth authentication
  * @route POST /api/auth/google
  */
-
-
-const oauth2Client = new OAuth2Client(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-);
 
 /**
  * Get Google OAuth URL
@@ -316,7 +316,7 @@ const handleGoogleCallback = async (req, res) => {
         const { code } = req.query;
         
         if (!code) {
-            return res.redirect(`http://localhost:5173/login?error=${encodeURIComponent('Authorization code is required')}`);
+            return res.redirect(`${process.env.appUrl}/login?error=${encodeURIComponent('Authorization code is required')}`);
         }
 
         // Exchange the authorization code for tokens
@@ -347,14 +347,14 @@ const handleGoogleCallback = async (req, res) => {
                 emailVerifiedAt: new Date(),
                 status: 'active',
                 googleId: payload.sub,
-                picture: payload.picture,
+                profilePicture: payload.picture,
                 passwordHash: passwordHash
             });
         } else if (!user.googleId) {
             // Link Google account to existing user
             await user.update({
                 googleId: payload.sub,
-                picture: payload.picture
+                profilePicture: payload.picture
             });
         }
 
@@ -362,24 +362,24 @@ const handleGoogleCallback = async (req, res) => {
         const jwtToken = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: 'user' // Default role for new users
         });
 
-        res.json({
-            token: jwtToken,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                isVerified: user.isVerified,
-                role: user.role
-            }
-        });
+        // Redirect to frontend with token - using /auth/callback route
+        return res.redirect(302, `${process.env.FRONTEND_URL || process.env.appUrl}/auth/callback?token=${encodeURIComponent(jwtToken)}`);
+
     } catch (error) {
-        console.error('Google authentication error:', error);
-        res.status(500).json({ message: 'Failed to authenticate with Google' });
+        console.error('Google callback error details:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code
+        });
+        
+        // Redirect to login page with error
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.appUrl}/login?error=${encodeURIComponent('Failed to authenticate with Google')}`);
     }
 };
+
 const googleAuth = async (req, res) => {
     try {
         const { token } = req.body;
@@ -396,6 +396,10 @@ const googleAuth = async (req, res) => {
         
         if (!user) {
             // Create new user if doesn't exist
+            const randomPassword = crypto.randomBytes(32).toString('hex');
+            const salt = await bcrypt.genSalt(10);
+            const passwordHash = await bcrypt.hash(randomPassword, salt);
+            
             user = await db.User.create({
                 name: payload.name,
                 email: payload.email,
@@ -403,13 +407,14 @@ const googleAuth = async (req, res) => {
                 emailVerifiedAt: new Date(),
                 status: 'active',
                 googleId: payload.sub,
-                picture: payload.picture
+                profilePicture: payload.picture,
+                passwordHash: passwordHash
             });
         } else if (!user.googleId) {
             // Link Google account to existing user
             await user.update({
                 googleId: payload.sub,
-                picture: payload.picture
+                profilePicture: payload.picture
             });
         }
 
@@ -417,24 +422,29 @@ const googleAuth = async (req, res) => {
         const jwtToken = generateToken({
             id: user.id,
             email: user.email,
-            role: user.role
+            role: 'user' // Default role for new users
         });
 
-        res.json({
-            token: jwtToken,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                isVerified: user.isVerified,
-                role: user.role
+        // Return user data with token using the same structure as login
+        return res.json({
+            message: 'Google authentication successful',
+            data: {
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    isVerified: user.isVerified,
+                    role: 'user'
+                },
+                token: jwtToken
             }
         });
     } catch (error) {
         console.error('Google authentication error:', error);
-        res.status(500).json({ message: 'Failed to authenticate with Google' });
+        return res.status(500).json({ message: 'Failed to authenticate with Google' });
     }
 };
+
 const checkEmailAndPassword = async (req, res) => {
     try {
         const { email, password, confirmPassword } = req.body;
@@ -488,7 +498,64 @@ const checkEmailAndPassword = async (req, res) => {
     }
 };
 
+/**
+ * Get current user's details
+ * @route GET /api/auth/me
+ */
+const getCurrentUser = async (req, res) => {
+    try {
+        // Get user ID from JWT token
+        const userId = req.user.id;
+        
+        if (!userId) {
+            return res.status(401).json({ message: 'Not authenticated' });
+        }
 
+        // Find user with their roles included
+        const user = await db.User.findOne({
+            where: { id: userId },
+            include: [
+                {
+                    model: db.Role,
+                    as: 'roles',
+                    attributes: ['id', 'name'],
+                    through: { attributes: [] } // Don't include junction table attributes
+                }
+            ],
+            attributes: { exclude: ['passwordHash', 'passwordResetToken', 'passwordResetExpires', 'emailVerificationToken'] } // Exclude sensitive data
+        });
+
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Determine the primary role
+        let primaryRole = 'user';  // Default role
+        
+        // Check roles array from the association
+        if (user.roles && user.roles.length > 0) {
+            // If user has multiple roles, prioritize in this order: admin > host > user
+            const roleNames = user.roles.map(role => role.name);
+            
+            if (roleNames.includes('admin')) {
+                primaryRole = 'admin';
+            } else if (roleNames.includes('host')) {
+                primaryRole = 'host';
+            }
+        }
+
+        // Add primary role to user object
+        const userData = user.toJSON();
+        userData.role = primaryRole;
+
+        return res.json({
+            user: userData
+        });
+    } catch (error) {
+        console.error('Error getting current user:', error);
+        return res.status(500).json({ message: 'Error getting user information' });
+    }
+};
 
 // Add handleGoogleCallback to module exports
 module.exports = {
@@ -501,6 +568,7 @@ module.exports = {
     getGoogleAuthURL,
     handleGoogleCallback ,
     checkEmailAndPassword,
+    getCurrentUser
 };
 
 

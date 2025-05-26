@@ -72,6 +72,7 @@ const listingController = {
                     isActive: true
                     }),
                     // If host parameter is provided, filter by hostId
+                    // This ensures hosts only see their own listings
                     ...(host === 'true' && req.user && { 
                         hostId: req.user.id 
                     })
@@ -2265,8 +2266,16 @@ const listingController = {
             const isPublished = listing.status === 'published' && listing.isActive;
             const isOwner = req.user && listing.hostId === req.user.id;
             
-            if (!isPublished && !isOwner) {
-                console.log(`User ${req.user?.id} not authorized to view listing ${listingId}`);
+            // If the user is a host, they should only see their own listings
+            // If they're not the owner, they can only see published listings
+            if (req.user?.role === 'host' && !isOwner) {
+                console.log(`Host ${req.user?.id} not authorized to view listing ${listingId} owned by ${listing.hostId}`);
+                return res.status(403).json({
+                    success: false,
+                    error: 'Hosts can only view their own listings'
+                });
+            } else if (!isOwner && !isPublished) {
+                console.log(`User ${req.user?.id} not authorized to view unpublished listing ${listingId}`);
                 return res.status(403).json({
                     success: false,
                     error: 'Not authorized to access this listing'
