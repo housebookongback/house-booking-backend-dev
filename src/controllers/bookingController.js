@@ -2,6 +2,7 @@ const db = require('../models');
 const { ValidationError } = require('sequelize');
 const { Op } = require('sequelize');
 const sequelize = require('sequelize');
+const notificationService = require('../services/notificationService');
 
 const bookingController = {
     createBookingRequest: async (req, res) => {
@@ -103,13 +104,14 @@ const bookingController = {
             }
 
             // 6. Calculate total price
-            let totalPrice = 0;
-            for (const date of dates) {
-                const dateStr = date.toISOString().split('T')[0];
-                const entry = calendarMap.get(dateStr);
-                const price = entry ? parseFloat(entry.basePrice) : parseFloat(listing.pricePerNight);
-                totalPrice += price;
-            }
+            // Calculate number of nights (difference between checkIn and checkOut in days)
+            const numberOfNights = Math.floor((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+            
+            // Get the price per night from listing
+            const pricePerNight = parseFloat(listing.pricePerNight);
+            
+            // Calculate base total (nights * price)
+            let totalPrice = numberOfNights * pricePerNight;
             
             // Add cleaning fee and security deposit
             if (listing.cleaningFee) {
@@ -132,6 +134,19 @@ const bookingController = {
                 totalPrice,
                 message,
                 status: 'pending'
+            });
+
+            // Add notification for host
+            await notificationService.createBookingNotification({
+                userId: listing.hostId,
+                type: 'info',
+                title: 'New Booking Request',
+                message: `You have a new booking request from ${req.user.name} for ${listing.title}`,
+                metadata: {
+                    bookingRequestId: bookingRequest.id,
+                    listingId: listing.id,
+                    guestId: req.user.id
+                }
             });
 
             // 8. Send response
@@ -250,7 +265,32 @@ const bookingController = {
                         }
                     );
 
+                    // Notify guest about approval
+                    await notificationService.createBookingNotification({
+                        userId: bookingRequest.guestId,
+                        type: 'success',
+                        title: 'Booking Request Approved',
+                        message: `Your booking request for ${bookingRequest.listing.title} has been approved`,
+                        metadata: {
+                            bookingRequestId: bookingRequest.id,
+                            bookingId: booking.id,
+                            listingId: bookingRequest.listingId
+                        }
+                    });
+
                     return { bookingRequest, booking };
+                } else if (status === 'rejected') {
+                    // Notify guest about rejection
+                    await notificationService.createBookingNotification({
+                        userId: bookingRequest.guestId,
+                        type: 'warning',
+                        title: 'Booking Request Rejected',
+                        message: `Your booking request for ${bookingRequest.listing.title} has been rejected`,
+                        metadata: {
+                            bookingRequestId: bookingRequest.id,
+                            listingId: bookingRequest.listingId
+                        }
+                    });
                 }
 
                 return { bookingRequest };
@@ -281,9 +321,7 @@ const bookingController = {
         }
     },
     updateBookingStatus: async (req, res) => {
-        
         const { id } = req.params;
-       
         const { status, reason } = req.body;
         const hostId = req.user.id;
 
@@ -299,7 +337,6 @@ const bookingController = {
             // Start a transaction
             const result = await db.sequelize.transaction(async (t) => {
                 // Find the booking
-               
                 const booking = await db.Booking.findOne({
                     where: { 
                         id: id,
@@ -315,8 +352,6 @@ const bookingController = {
                 if (!booking) {
                     throw new Error('Booking not found');
                 }
-
-                
 
                 // Validate status transition
                 const currentStatus = booking.status;
@@ -346,6 +381,66 @@ const bookingController = {
                             transaction: t
                         }
                     );
+
+                    // Notify both guest and host about cancellation
+                    await notificationService.createBookingNotification({
+                        userId: booking.guestId,
+                        type: 'warning',
+                        title: 'Booking Cancelled',
+                        message: `Your booking for ${booking.listing.title} has been cancelled`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId,
+                            reason: reason
+                        }
+                    });
+
+                    await notificationService.createBookingNotification({
+                        userId: booking.hostId,
+                        type: 'warning',
+                        title: 'Booking Cancelled',
+                        message: `A booking for ${booking.listing.title} has been cancelled`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId,
+                            reason: reason
+                        }
+                    });
+                } else if (status === 'confirmed') {
+                    // Notify guest about confirmation
+                    await notificationService.createBookingNotification({
+                        userId: booking.guestId,
+                        type: 'success',
+                        title: 'Booking Confirmed',
+                        message: `Your booking for ${booking.listing.title} has been confirmed`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId
+                        }
+                    });
+                } else if (status === 'completed') {
+                    // Notify both guest and host about completion
+                    await notificationService.createBookingNotification({
+                        userId: booking.guestId,
+                        type: 'success',
+                        title: 'Stay Completed',
+                        message: `Your stay at ${booking.listing.title} has been completed`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId
+                        }
+                    });
+
+                    await notificationService.createBookingNotification({
+                        userId: booking.hostId,
+                        type: 'success',
+                        title: 'Stay Completed',
+                        message: `A guest has completed their stay at ${booking.listing.title}`,
+                        metadata: {
+                            bookingId: booking.id,
+                            listingId: booking.listingId
+                        }
+                    });
                 }
 
                 return booking;
@@ -363,8 +458,6 @@ const bookingController = {
             });
 
         } catch (error) {
-           
-           
             console.error('Error updating booking status:', error);
             return res.status(500).json({
                 success: false,
@@ -420,31 +513,40 @@ const bookingController = {
         const hostId = req.user.id;
 
         try {
-            const booking = await db.Booking.findOne({
-                where: { id: bookingId, hostId },
-                include: [
-                    {
-                        model: db.User,
-                        as: 'guest',
-                        attributes: ['id', 'name',  'email', 'phone']
-                    },
-                    {
-                        model: db.Listing,
-                        as: 'listing'
-                    },
-                    {
-                        model: db.Payment,
-                        as: 'payments'
+            console.log(`[BOOKING CONTROLLER] Looking for booking with ID: ${bookingId}`);
+            
+            // Find the booking with necessary related data
+                const booking = await db.Booking.findOne({
+                    where: { id: bookingId },
+                    include: [
+                        {
+                            model: db.User,
+                            as: 'guest',
+                            attributes: ['id', 'name', 'email', 'phone']
+                        },
+                        {
+                            model: db.Listing,
+                        as: 'listing',
+                        // Include ALL fields needed for price calculation
+                        attributes: ['id', 'title', 'address', 'pricePerNight', 'cleaningFee', 'securityDeposit', 'accommodates']
                     }
                 ]
             });
 
             if (!booking) {
+                console.log(`[BOOKING CONTROLLER] No booking found with ID: ${bookingId}`);
                 return res.status(404).json({
                     success: false,
                     error: 'Booking not found'
                 });
             }
+            
+            console.log(`[BOOKING CONTROLLER] Found booking with ID: ${bookingId}, hostId: ${booking.hostId}`);
+            console.log('[BOOKING CONTROLLER] Listing price details:', {
+                pricePerNight: booking.listing?.pricePerNight,
+                cleaningFee: booking.listing?.cleaningFee,
+                securityDeposit: booking.listing?.securityDeposit
+            });
 
             return res.json({
                 success: true,
@@ -454,7 +556,7 @@ const bookingController = {
             console.error('Error fetching booking details:', error);
             return res.status(500).json({
                 success: false,
-                error: 'Failed to fetch booking details'
+                error: 'Failed to fetch booking details: ' + error.message
             });
         }
     },
@@ -494,6 +596,522 @@ const bookingController = {
             return res.status(500).json({
                 success: false,
                 error: 'Failed to fetch calendar data'
+            });
+        }
+    },
+    /**
+     * Cancel a booking
+     * @route POST /api/bookings/:id/cancel
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     * @returns {object} JSON response with the updated booking
+     */
+    cancelBooking: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { reason } = req.body;
+            const userId = req.user.id;
+
+            // Find the booking
+            const booking = await db.Booking.findOne({
+                where: { id },
+                include: [
+                    {
+                        model: db.Listing,
+                        as: 'listing',
+                        attributes: ['id', 'title', 'hostId']
+                    }
+                ]
+            });
+
+            if (!booking) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Booking not found'
+                });
+            }
+
+            // Check authorization - only allow host or guest to cancel
+            const isHost = booking.hostId === userId;
+            const isGuest = booking.guestId === userId;
+
+            if (!isHost && !isGuest) {
+                return res.status(403).json({
+                    success: false,
+                    error: 'Not authorized to cancel this booking'
+                });
+            }
+
+            // Check if booking can be cancelled
+            if (booking.status === 'cancelled') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Booking is already cancelled'
+                });
+            }
+
+            if (booking.status === 'completed') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Completed bookings cannot be cancelled'
+                });
+            }
+
+            // Update booking status without interacting with BookingCalendar
+            await db.Booking.update({
+                status: 'cancelled',
+                cancellationReason: reason,
+                cancelledBy: userId
+            }, {
+                where: { id },
+                individualHooks: false // Skip triggers/hooks to avoid BookingCalendar updates
+            });
+
+            // Get the updated booking
+            const updatedBooking = await db.Booking.findByPk(id);
+
+            // Return success response
+            res.json({
+                success: true,
+                message: 'Booking cancelled successfully',
+                data: updatedBooking
+            });
+        } catch (error) {
+            console.error('Error cancelling booking:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to cancel booking'
+            });
+        }
+    },
+    /**
+     * Edit a booking
+     * @route PUT /api/bookings/:id/edit
+     * @param {object} req - Express request object
+     * @param {object} res - Express response object
+     * @returns {object} JSON response with the updated booking
+     */
+    editBooking: async (req, res) => {
+        try {
+            const { id } = req.params;
+            const { 
+                checkIn, 
+                checkOut, 
+                numberOfGuests, 
+                specialRequests, 
+                totalPrice: requestTotalPrice,
+                forceUpdate = false  // Add forceUpdate flag with false default
+            } = req.body;
+            
+            console.log('[EDIT BOOKING] Request body:', req.body);
+            
+            if (requestTotalPrice !== undefined) {
+                console.log('[EDIT BOOKING] Using client-provided total price:', requestTotalPrice);
+            }
+            
+            if (forceUpdate) {
+                console.log('[EDIT BOOKING] Force update is enabled - will bypass validation checks');
+            }
+            
+            // Get booking with related data - don't look for forceUpdate column
+            const booking = await db.Booking.findByPk(id, {
+                include: [
+                    { model: db.Listing, as: 'listing' },
+                    { model: db.User, as: 'guest' },
+                    { model: db.User, as: 'host' }
+                ]
+            });
+            
+            if (!booking) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Booking not found'
+                });
+            }
+            
+            // For security, check if the user is the host of this booking
+            const currentUserId = req.user.id;
+            if (booking.hostId !== currentUserId && req.user.role !== 'admin') {
+                return res.status(403).json({
+                    success: false,
+                    error: 'You do not have permission to edit this booking'
+                });
+            }
+            
+            // Check if booking can be edited - allow pending, confirmed, and cancelled bookings
+            if (!['pending', 'confirmed', 'cancelled'].includes(booking.status)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Cannot edit a booking with status "${booking.status}"`
+                });
+            }
+            
+            // Start a transaction
+            const result = await db.sequelize.transaction(async (t) => {
+                // Keep track of what was updated
+                const updates = {};
+                let recalculateTotalPrice = false;
+                
+                // For cancelled bookings, don't try to update calendar
+                const isCancelled = booking.status === 'cancelled';
+                
+                // Update dates and free up or block calendar dates if needed
+                if (!isCancelled && ((checkIn && checkIn !== booking.checkIn) || 
+                    (checkOut && checkOut !== booking.checkOut))) {
+                    
+                    // Validate dates - only if forceUpdate is false
+                    if (!forceUpdate) {
+                        const newCheckIn = checkIn ? new Date(checkIn) : new Date(booking.checkIn);
+                        const newCheckOut = checkOut ? new Date(checkOut) : new Date(booking.checkOut);
+                        const today = new Date();
+                        
+                        // Basic date validation
+                        if (newCheckIn < today) {
+                            throw new Error('Check-in date must be in the future');
+                        }
+                        
+                        if (newCheckOut <= newCheckIn) {
+                            throw new Error('Check-out date must be after check-in date');
+                        }
+                    }
+                    
+                    // Check availability for the new dates (only if dates changed)
+                    if ((checkIn && checkIn !== booking.checkIn) || (checkOut && checkOut !== booking.checkOut)) {
+                        
+                        try {
+                            // First, restore availability for the current booking dates
+                            await db.BookingCalendar.update(
+                                { isAvailable: true },
+                                {
+                                    where: {
+                                        listingId: booking.listingId,
+                                        date: {
+                                            [Op.between]: [booking.checkIn, booking.checkOut]
+                                        }
+                                    },
+                                    transaction: t
+                                }
+                            );
+                        } catch (error) {
+                            console.log('[EDIT BOOKING] Error restoring availability for current dates:', error.message);
+                            // Continue even if this fails
+                        }
+                        
+                        // Skip availability check if forceUpdate is true
+                        if (!forceUpdate) {
+                            try {
+                                const newCheckIn = checkIn ? new Date(checkIn) : new Date(booking.checkIn);
+                                const newCheckOut = checkOut ? new Date(checkOut) : new Date(booking.checkOut);
+                                
+                                const calendarEntries = await db.BookingCalendar.findAll({
+                                    where: {
+                                        listingId: booking.listingId,
+                                        date: {
+                                            [Op.between]: [newCheckIn, newCheckOut]
+                                        }
+                                    },
+                                    transaction: t
+                                });
+                                
+                                // Generate an array of all dates in the range
+                                const dates = [];
+                                const currentDate = new Date(newCheckIn);
+                                while (currentDate < newCheckOut) {
+                                    dates.push(new Date(currentDate));
+                                    currentDate.setDate(currentDate.getDate() + 1);
+                                }
+                                
+                                // Create a map of calendar entries
+                                const calendarMap = new Map(
+                                    calendarEntries.map(entry => {
+                                        const dateObj = new Date(entry.date);
+                                        return [dateObj.toISOString().split('T')[0], entry];
+                                    })
+                                );
+                                
+                                // Check if all dates are available
+                                for (const date of dates) {
+                                    const dateStr = date.toISOString().split('T')[0];
+                                    const entry = calendarMap.get(dateStr);
+                                    
+                                    if (!entry || !entry.isAvailable) {
+                                        // Reblock the original dates since we're rolling back
+                                        try {
+                                            await db.BookingCalendar.update(
+                                                { isAvailable: false },
+                                                {
+                                                    where: {
+                                                        listingId: booking.listingId,
+                                                        date: {
+                                                            [Op.between]: [booking.checkIn, booking.checkOut]
+                                                        }
+                                                    },
+                                                    transaction: t
+                                                }
+                                            );
+                                        } catch (restoreError) {
+                                            console.log('[EDIT BOOKING] Error restoring blocked dates:', restoreError.message);
+                                        }
+                                        throw new Error(`Listing is not available for ${dateStr}`);
+                                    }
+                                }
+                            } catch (error) {
+                                if (!forceUpdate) {
+                                    throw error; // Re-throw if not force update
+                                }
+                                console.log('[EDIT BOOKING] Availability check failed but continuing due to forceUpdate:', error.message);
+                            }
+                        } else {
+                            console.log('[EDIT BOOKING] Force update is enabled - bypassing availability check');
+                        }
+                        
+                        // Calculate new total price based on the new dates
+                        let totalPrice = 0;
+                        
+                        try {
+                            // Calculate number of nights (difference between checkIn and checkOut in days)
+                            const checkInDate = checkIn ? new Date(checkIn) : new Date(booking.checkIn);
+                            const checkOutDate = checkOut ? new Date(checkOut) : new Date(booking.checkOut);
+                            const numberOfNights = Math.floor((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+                            
+                            // Get the price per night from listing
+                            const pricePerNight = parseFloat(booking.listing.pricePerNight || 0);
+                            
+                            // Calculate base total (nights * price)
+                            totalPrice = numberOfNights * pricePerNight;
+                            
+                            // Add cleaning fee and security deposit (assuming they're in the listing model)
+                            if (booking.listing.cleaningFee) {
+                                totalPrice += parseFloat(booking.listing.cleaningFee);
+                            }
+                            if (booking.listing.securityDeposit) {
+                                totalPrice += parseFloat(booking.listing.securityDeposit);
+                            }
+                            
+                            totalPrice = parseFloat(totalPrice.toFixed(2));
+                        } catch (error) {
+                            console.log('[EDIT BOOKING] Error calculating price:', error.message);
+                            // If calculation fails, use the requested total price
+                            totalPrice = requestTotalPrice !== undefined ? parseFloat(requestTotalPrice) : booking.totalPrice;
+                        }
+                        
+                        try {
+                            // Block the new dates (or clear them if forceUpdate is true)
+                            await db.BookingCalendar.update(
+                                { isAvailable: false },
+                                {
+                                    where: {
+                                        listingId: booking.listingId,
+                                        date: {
+                                            [Op.between]: [
+                                                checkIn ? new Date(checkIn) : new Date(booking.checkIn), 
+                                                checkOut ? new Date(checkOut) : new Date(booking.checkOut)
+                                            ]
+                                        }
+                                    },
+                                    transaction: t
+                                }
+                            );
+                        } catch (error) {
+                            console.log('[EDIT BOOKING] Error blocking new dates:', error.message);
+                            // Continue even if this fails when using forceUpdate
+                            if (!forceUpdate) {
+                                throw error;
+                            }
+                        }
+                        
+                        // Update the booking object
+                        if (checkIn) {
+                            booking.checkIn = checkIn;
+                            updates.checkIn = checkIn;
+                        }
+                        if (checkOut) {
+                            booking.checkOut = checkOut;
+                            updates.checkOut = checkOut;
+                        }
+                        
+                        booking.totalPrice = totalPrice;
+                        updates.totalPrice = totalPrice;
+                        recalculateTotalPrice = false;  // Already recalculated
+                    }
+                } else if (isCancelled && ((checkIn && checkIn !== booking.checkIn) || 
+                    (checkOut && checkOut !== booking.checkOut))) {
+                    // For cancelled bookings, just update the dates without calendar operations
+                    if (checkIn) {
+                        booking.checkIn = checkIn;
+                        updates.checkIn = checkIn;
+                    }
+                    if (checkOut) {
+                        booking.checkOut = checkOut;
+                        updates.checkOut = checkOut;
+                    }
+                }
+                
+                // Update number of guests
+                if (numberOfGuests && numberOfGuests !== booking.numberOfGuests) {
+                    // Validate guest count - skip if forceUpdate is true
+                    if (!forceUpdate && !isCancelled) {
+                        if (numberOfGuests < 1 || numberOfGuests > booking.listing.accommodates) {
+                            throw new Error(`Number of guests must be between 1 and ${booking.listing.accommodates}`);
+                        }
+                    }
+                    
+                    booking.numberOfGuests = numberOfGuests;
+                    updates.numberOfGuests = numberOfGuests;
+                    recalculateTotalPrice = !isCancelled && !forceUpdate;  // Only recalculate if booking is not cancelled and not force update
+                }
+                
+                // Update special requests
+                if (specialRequests !== undefined && specialRequests !== booking.specialRequests) {
+                    booking.specialRequests = specialRequests;
+                    updates.specialRequests = specialRequests;
+                }
+                
+                // If client provided a totalPrice directly, use that
+                if (requestTotalPrice !== undefined) {
+                    console.log('[EDIT BOOKING] Using client-provided total price:', requestTotalPrice);
+                    booking.totalPrice = parseFloat(requestTotalPrice);
+                    updates.totalPrice = booking.totalPrice;
+                    recalculateTotalPrice = false; // Skip recalculation
+                }
+                
+                // If we need to recalculate the price and haven't done so already (and it's not cancelled)
+                if (recalculateTotalPrice && !isCancelled) {
+                    try {
+                        // Calculate new total price
+                        let totalPrice = 0;
+                        
+                        // Calculate number of nights (difference between checkIn and checkOut in days)
+                        const checkInDate = new Date(booking.checkIn);
+                        const checkOutDate = new Date(booking.checkOut);
+                        const numberOfNights = Math.floor((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+                        
+                        console.log('[EDIT BOOKING] Recalculating price:', { 
+                            checkIn: checkInDate, 
+                            checkOut: checkOutDate, 
+                            nights: numberOfNights,
+                            pricePerNight: booking.listing.pricePerNight
+                        });
+                        
+                        // Get the price per night from listing
+                        const pricePerNight = parseFloat(booking.listing.pricePerNight);
+                        
+                        // Calculate base total (nights * price)
+                        totalPrice = numberOfNights * pricePerNight;
+                        
+                        // Add fees
+                        if (booking.listing.cleaningFee) {
+                            totalPrice += parseFloat(booking.listing.cleaningFee);
+                        }
+                        if (booking.listing.securityDeposit) {
+                            totalPrice += parseFloat(booking.listing.securityDeposit);
+                        }
+                        
+                        booking.totalPrice = parseFloat(totalPrice.toFixed(2));
+                        updates.totalPrice = booking.totalPrice;
+                        
+                        console.log('[EDIT BOOKING] Recalculated total price:', booking.totalPrice);
+                    } catch (error) {
+                        console.log('[EDIT BOOKING] Error recalculating price:', error.message);
+                        // Don't fail if forceUpdate is true
+                        if (!forceUpdate) {
+                            throw error;
+                        }
+                    }
+                }
+                
+                // Save the booking if any changes were made
+                if (Object.keys(updates).length > 0) {
+                    try {
+                        // Pass the forceUpdate flag as an option
+                        await booking.save({ 
+                            transaction: t,
+                            forceUpdate: forceUpdate, // Pass the flag to the hooks
+                            validate: !forceUpdate // Skip validation if forceUpdate is true 
+                        });
+                        
+                        // Create a notification for both guest and host
+                        try {
+                            const notifyUserId = booking.hostId;
+                            await notificationService.createBookingNotification({
+                                userId: notifyUserId,
+                                type: 'info',
+                                title: 'Booking Updated',
+                                message: `A booking for ${booking.listing.title} has been updated`,
+                                metadata: {
+                                    bookingId: booking.id,
+                                    listingId: booking.listingId,
+                                    updates: Object.keys(updates)
+                                }
+                            }, { transaction: t });
+                        } catch (notifyError) {
+                            console.log('[EDIT BOOKING] Error creating notification:', notifyError.message);
+                            // Don't fail the transaction if notification fails
+                        }
+                    } catch (saveError) {
+                        console.log('[EDIT BOOKING] Error saving booking:', saveError.message);
+                        // If force update is on, try a raw update query
+                        if (forceUpdate) {
+                            console.log('[EDIT BOOKING] Attempting raw update with forceUpdate');
+                            
+                            // Convert updates to a format suitable for a raw update
+                            const rawUpdates = {};
+                            if (updates.checkIn) rawUpdates.checkIn = updates.checkIn;
+                            if (updates.checkOut) rawUpdates.checkOut = updates.checkOut;
+                            if (updates.numberOfGuests) rawUpdates.numberOfGuests = updates.numberOfGuests;
+                            if (updates.specialRequests !== undefined) rawUpdates.specialRequests = updates.specialRequests;
+                            if (updates.totalPrice) rawUpdates.totalPrice = updates.totalPrice;
+                            
+                            // Execute raw update
+                            await db.Booking.update(rawUpdates, {
+                                where: { id: booking.id },
+                                transaction: t,
+                                individualHooks: false // Skip hooks entirely
+                            });
+                            
+                            // Reload the booking after raw update
+                            await booking.reload({ transaction: t });
+                        } else {
+                            throw saveError;
+                        }
+                    }
+                } else {
+                    // No changes were made
+                    return {
+                        booking,
+                        updates: {},
+                        message: 'No changes were made to the booking'
+                    };
+                }
+                
+                return {
+                    booking,
+                    updates,
+                    message: 'Booking updated successfully'
+                };
+            });
+            
+            return res.status(200).json({
+                success: true,
+                message: result.message,
+                data: {
+                    bookingId: result.booking.id,
+                    updates: result.updates,
+                    booking: {
+                        checkIn: result.booking.checkIn,
+                        checkOut: result.booking.checkOut,
+                        numberOfGuests: result.booking.numberOfGuests,
+                        totalPrice: result.booking.totalPrice,
+                        specialRequests: result.booking.specialRequests,
+                        status: result.booking.status
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error updating booking:', error);
+            return res.status(500).json({
+                success: false,
+                error: error.message || 'Failed to update booking'
             });
         }
     }

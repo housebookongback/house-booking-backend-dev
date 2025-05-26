@@ -1,5 +1,13 @@
 const { faker } = require('@faker-js/faker');
-const db = require('../models');
+const { 
+  Booking,
+  BookingRequest,
+  BookingCalendar,
+  BookingChange,
+  BookingCancellation,
+  SeasonalPricing,
+  PriceRule
+} = require('../models');
 console.log("d ")
 async function seedBookingModels() {
   // const transaction = await db.transaction();
@@ -50,7 +58,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await db.PriceRule.bulkCreate(priceRules);
+    await PriceRule.bulkCreate(priceRules);
 
     const seasonalPricing = Array.from({ length: 10 }).map(() => ({
       listingId: faker.helpers.arrayElement(listingIds),
@@ -63,7 +71,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await db.SeasonalPricing.bulkCreate(seasonalPricing);
+    await SeasonalPricing.bulkCreate(seasonalPricing);
 
     const bookings = [];
     for (let i = 0; i < 10; i++) {
@@ -88,7 +96,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       });
     }
-    const createdBookings = await db.Booking.bulkCreate(bookings);
+    const createdBookings = await Booking.bulkCreate(bookings);
 
     // Create booking requests
     const bookingRequests = createdBookings
@@ -112,7 +120,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await db.BookingRequest.bulkCreate(bookingRequests);
+    await BookingRequest.bulkCreate(bookingRequests);
 
     // Create booking changes
     const bookingChanges = createdBookings
@@ -144,7 +152,7 @@ async function seedBookingModels() {
         };
       });
 
-    await db.BookingChange.bulkCreate(bookingChanges);
+    await BookingChange.bulkCreate(bookingChanges);
 
     // Create booking cancellations
     const bookingCancellations = createdBookings
@@ -162,7 +170,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await db.BookingCancellation.bulkCreate(bookingCancellations);
+    await BookingCancellation.bulkCreate(bookingCancellations);
 
     // Create booking calendars for each listing
     const bookingCalendars = [];
