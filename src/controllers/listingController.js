@@ -60,7 +60,9 @@ const listingController = {
                 maxPrice,
                 minRating,
                 instantBookable,
-                host
+                host,
+                search,
+                filters
             } = req.query;
 
             console.log('Received query parameters:', req.query);
@@ -70,8 +72,8 @@ const listingController = {
                 where: {
                     // Apply status and isActive filtering only for public listings, not for host listings
                     ...(host !== 'true' && { 
-                    status: 'published',
-                    isActive: true
+                        status: 'published',
+                        isActive: true
                     }),
                     // If host parameter is provided, filter by hostId
                     ...(host === 'true' && req.user && { 
@@ -102,7 +104,29 @@ const listingController = {
                 offset: (parseInt(page) - 1) * parseInt(limit)
             };
 
+            // Add search if provided
+            if (search) {
+                queryOptions.where[Op.or] = [
+                    { title: { [Op.iLike]: `%${search}%` } },
+                    { description: { [Op.iLike]: `%${search}%` } },
+                    { '$locationDetails.name$': { [Op.iLike]: `%${search}%` } }
+                ];
+            }
+
             // Add filters if provided
+            if (filters) {
+                if (filters.guests) {
+                    queryOptions.where.accommodates = { [Op.gte]: parseInt(filters.guests) };
+                }
+                if (filters.categories) {
+                    const categoryIds = Array.isArray(filters.categories) 
+                        ? filters.categories 
+                        : filters.categories.split(',').map(id => parseInt(id.trim()));
+                    queryOptions.where.categoryId = { [Op.in]: categoryIds };
+                }
+            }
+
+            // Add other filters
             if (categories) {
                 const categoryIds = categories.split(',').map(id => parseInt(id.trim()));
                 console.log('Filtering by category IDs:', categoryIds);
@@ -134,12 +158,12 @@ const listingController = {
                 }
             });
         } catch (error) {
-          console.error('Error fetching listings:', error);
-          res.status(500).json({
-            success: false,
-            error: 'Failed to fetch listings',
-            details: error.message,
-          });
+            console.error('Error fetching listings:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch listings',
+                details: error.message,
+            });
         }
     },
 
