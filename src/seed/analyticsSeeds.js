@@ -56,7 +56,7 @@ async function seedAnalytics() {
       }
     ]);
 
-    console.log('✅ Analytics models seeded successfully');
+    console.log('seeded succes ,analiticsSeeds.js');
   } catch (error) {
     console.error('❌ Error seeding analytics models:', error);
     throw error;

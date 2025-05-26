@@ -6,8 +6,8 @@ const { verifyToken } = require('./jwtUtils');
  * This middleware verifies JWT tokens and authenticates users.
  * 
  * HOW TO USE:
- * 1. Import the middleware: const { authenticate } = require('./middleware/authMiddleware');
- * 2. Add it to your routes: router.get('/protected', authenticate, controller)
+ * 1. Import the middleware: const { authenticateJWT } = require('./middleware/authMiddleware');
+ * 2. Add it to your routes: router.get('/protected', authenticateJWT, controller)
  * 
  * WHAT IT DOES:
  * 1. Checks for Authorization header with Bearer token
@@ -22,7 +22,7 @@ const { verifyToken } = require('./jwtUtils');
  * - Adds user data to req.user
  * - Proceeds to next middleware/controller
  */
-const authenticate = (req, res, next) => {
+const authenticateJWT = (req, res, next) => {
     // Get token from Authorization header
     const token = req.headers.authorization?.split(' ')[1];
 
@@ -48,7 +48,7 @@ const authenticate = (req, res, next) => {
  * 
  * HOW TO USE:
  * 1. Import the middleware: const { authorize } = require('./middleware/authMiddleware');
- * 2. Add it after authenticate: router.get('/admin', authenticate, authorize(['admin']), controller)
+ * 2. Add it after authenticateJWT: router.get('/admin', authenticateJWT, authorize(['admin']), controller)
  * 
  * WHAT IT DOES:
  * 1. Checks if user is authenticated
@@ -72,7 +72,10 @@ const authorize = (roles = []) => {
     };
 };
 
-module.exports = { authenticate, authorize }; 
+// For backward compatibility
+const authenticate = authenticateJWT;
+
+module.exports = { authenticateJWT, authenticate, authorize };
 /**
  * // In your route file (e.g., adminRoutes.js)
 const express = require('express');

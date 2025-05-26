@@ -15,6 +15,11 @@ module.exports = (sequelize, DataTypes) => {
             unique: true, 
             validate: { isEmail: true } 
         },
+        googleId: {
+            type: DataTypes.STRING,
+            allowNull: true,
+            unique: true
+        },
         passwordHash: { 
             type: DataTypes.STRING,  
             allowNull: false 
@@ -210,4 +215,4 @@ module.exports = (sequelize, DataTypes) => {
     };
 
     return User;
-}; 
+};

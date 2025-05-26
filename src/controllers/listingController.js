@@ -22,6 +22,7 @@
 const db = require('../models');
 const PropertyType = db.PropertyType;
 const Listing = db.Listing;
+console.log("listing",Listing)
 const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
@@ -124,11 +125,12 @@ const listingController = {
                 }
             });
         } catch (error) {
-            console.error('Error fetching listings:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to fetch listings'
-            });
+          console.error('Error fetching listings:', error);
+          res.status(500).json({
+            success: false,
+            error: 'Failed to fetch listings',
+            details: error.message,
+          });
         }
     },
 

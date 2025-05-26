@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { validateRequest } = require('../middleware/validationMiddleware');
+const { authenticateJWT } = require('../middleware/authMiddleware');
 const authController = require('../controllers/authController');
 
 // Validation schemas
@@ -55,5 +56,11 @@ router.post('/login', validateRequest(loginSchema), authController.login);
 router.get('/verify/:token', authController.verifyEmail);
 router.post('/forgot-password', validateRequest(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validateRequest(resetPasswordSchema), authController.resetPassword);
+router.post('/google', authController.googleAuth);
+router.get('/google/url', authController.getGoogleAuthURL);
+router.get('/google/callback', authController.handleGoogleCallback);
+router.post('/checking', authController.checkEmailAndPassword);
+// Add route to get current user (protected by JWT authentication)
+router.get('/me', authenticateJWT, authController.getCurrentUser);
 
-module.exports = router; 
+module.exports = router;

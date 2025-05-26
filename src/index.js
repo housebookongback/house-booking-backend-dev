@@ -6,7 +6,7 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-
+; // Import the verify middleware
 const db      = require('./models'); // Import Sequelize models
 //const { uploadSingle } = require('./middleware/upload');
 const { uploadMultiple } = require('./middleware/upload');
@@ -16,6 +16,7 @@ const { uploadMultiple } = require('./middleware/upload');
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
+const verify  = require('./routes/VerificationCodeRoutes')
 const hostApplicationRoutes = require('./routes/hostApplicationRoutes');
 const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
@@ -25,7 +26,10 @@ const reviewRoutes = require('./routes/reviewRoutes'); // Add review routes
 const app = express();
 
 /* ───────────── Global middleware ───────────── */
-app.use(helmet()); // Security headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+})); // Security headers with CORP configuration
+
 app.use(cors({
     origin: '*', // Allow all origins during development
     credentials: true      // Allow cookies/sessions
@@ -65,6 +69,7 @@ db.init()
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use("/api/verify", verify)
 app.use('/api/host', hostApplicationRoutes);
 app.use('/api/host', hostRoutes);
 app.use('/api/guest', guestRoutes);
