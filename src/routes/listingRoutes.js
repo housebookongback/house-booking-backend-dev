@@ -103,5 +103,6 @@ router.get('/:listingId', authenticate, listingController.getListingById);
 
 // delete listing
 router.delete('/:listingId', authenticate, listingController.deleteListing);
+router.get('/details/:listingId',listingController.getOneListing)
 
 module.exports = router; 
