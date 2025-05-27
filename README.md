@@ -93,7 +93,7 @@ npm start
 ### Authentication Endpoints
 
 - `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - User login
+- `POST /api/auth/home` - User login
 - `GET /api/auth/verify/:token` - Verify email
 - `POST /api/auth/forgot-password` - Request password reset
 - `POST /api/auth/reset-password` - Reset password

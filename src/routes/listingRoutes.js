@@ -12,22 +12,40 @@ const { uploadMultiple } = require('../middleware/upload');
 // Query params: page, limit, sortBy, sortOrder, categoryId, locationId, minPrice, maxPrice, minRating, instantBookable
 router.get('/public', listingController.getAllListings);
 
+// GET /:listingId - Get single listing by id (public access)
+router.get('/:listingId/public', listingController.getListingById);
+
+// GET /property-types - Get all available property types (public access)
+router.get('/property-types', listingController.getPropertyTypes);
+
+// GET /categories - Get all categories (public access)
+router.get('/categories', listingController.getCategories);
+
+// GET /amenities - Get all available amenities (public access)
+router.get('/amenities', listingController.getAmenities);
+
+// GET /:listingId/availability - Check availability for booking (public access)
+router.get('/:listingId/availability', listingController.getAvailability);
+
+// GET /:listingId/calendar - Get listing calendar (public access)
+router.get('/:listingId/calendar', listingController.getCalendar);
+
+/**
+ * Protected Routes - Authentication required
+ */
+
 // GET / - Get all listings with host filtering when host=true (requires authentication)
 // Query params: page, limit, sortBy, sortOrder, categoryId, locationId, minPrice, maxPrice, minRating, instantBookable, host
 // Note: host=true parameter requires authentication and will filter to show only the host's listings
 router.get('/', authenticate, listingController.getAllListings);
 
-/**
- * Property Type, Category, and Amenity Routes
- * These must come before /:listingId to avoid route conflicts
- */
+// GET /:listingId - Get single listing by id (with auth)
+router.get('/:listingId', authenticate, listingController.getListingById);
 
-// GET /property-types - Get all available property types
-// Returns: Array of property types with id, name, and icon
-router.get('/property-types', listingController.getPropertyTypes);
-router.get('/categories', listingController.getCategories);
+// POST /draft - Create draft listing
 router.post('/draft', authenticate, listingController.createDraftListing);
-// Add route for updating basic info
+
+// PATCH /:listingId/basic-info - Update basic info
 router.patch('/:listingId/basic-info', authenticate, listingController.updateBasicInfo);
 
 // PATCH /:listingId/location - Update listing location (Step 2)
@@ -58,9 +76,6 @@ router.delete('/:listingId/photos/:photoId', authenticate, listingController.del
 // Add new photos to an existing listing
 router.post('/:listingId/photos', authenticate, uploadMultiple, listingController.addPhotos);
 
-// Get all available amenities - Make this endpoint public
-router.get('/amenities', listingController.getAmenities);
-
 // Amenities Update
 router.patch('/:listingId/amenities', authenticate, listingController.updateAmenities);
 router.patch('/:listingId/amenities-simple', authenticate, listingController.updateAmenitiesSimple);
@@ -72,7 +87,6 @@ router.patch('/:listingId/rules-simple', authenticate, listingController.updateR
 // PATCH /:listingId/calendar - Update listing calendar (Step 7)
 // Body: Array of calendar entries [{ date, isAvailable, price }]
 router.patch('/:listingId/calendar', authenticate, listingController.updateCalendar);
-router.get('/:listingId/calendar', listingController.getCalendar);
 
 // Step Status Management
 router.patch('/:listingId/step-status', authenticate, listingController.updateStepStatus);
@@ -94,14 +108,8 @@ router.post('/:listingId/force-status-update', authenticate, listingController.f
 // Direct update endpoint for fallback
 router.post('/:listingId/direct-update', authenticate, listingController.directUpdateListing);
 
-// check availability for booking
-router.get('/:listingId/availability',  listingController.getAvailability);
-
 // Utility route - schema check and fix (protect with admin auth later)
 router.get('/admin/check-schema', listingController.checkAndFixSchema);
-
-// get single listing by id
-router.get('/:listingId', authenticate, listingController.getListingById);
 
 // delete listing
 router.delete('/:listingId', authenticate, listingController.deleteListing);
