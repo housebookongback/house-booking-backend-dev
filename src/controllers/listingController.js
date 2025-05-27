@@ -3194,13 +3194,14 @@ const listingController = {
             
             const listing = await db.Listing.findByPk(listingId, {
                 include: [
-                    // User (host) information
+                    // User (host) information with expanded attributes
                     {
                         model: db.User,
                         as: 'host',
                         include: [{
                             model: db.HostProfile,
                             as: 'hostProfile',
+                            attributes: ['id', 'displayName', 'bio', 'profilePicture', 'phoneNumber', 'isSuperhost','superhostSince']
                         }]
                     },
                     // Property Type information
@@ -3248,7 +3249,7 @@ const listingController = {
                     exclude: ['deletedAt', 'createdAt', 'updatedAt']
                 }
             });
-console.log("lissssssssssss",listing)
+
             if (!listing) {
                 return res.status(404).json({
                     success: false,
