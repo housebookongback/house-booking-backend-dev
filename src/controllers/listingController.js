@@ -22,7 +22,7 @@
 const db = require('../models');
 const PropertyType = db.PropertyType;
 const Listing = db.Listing;
-console.log("listing",Listing)
+console.log(Listing,"listingsssssssssssssssssss22222222222");
 const Photo = db.Photo;
 const { ValidationError } = require('sequelize');
 const path = require('path');
@@ -54,22 +54,26 @@ const listingController = {
                 limit = 10,
                 sortBy = 'createdAt',
                 sortOrder = 'DESC',
-                categoryId,
+                categories,
                 locationId,
                 minPrice,
                 maxPrice,
                 minRating,
                 instantBookable,
-                host
+                host,
+                search,
+                filters
             } = req.query;
+
+            console.log('Received query parameters:', req.query);
 
             // Build query options
             const queryOptions = {
                 where: {
                     // Apply status and isActive filtering only for public listings, not for host listings
                     ...(host !== 'true' && { 
-                    status: 'published',
-                    isActive: true
+                        status: 'published',
+                        isActive: true
                     }),
                     // If host parameter is provided, filter by hostId
                     // This ensures hosts only see their own listings
@@ -101,16 +105,46 @@ const listingController = {
                 offset: (parseInt(page) - 1) * parseInt(limit)
             };
 
+            // Add search if provided
+            if (search) {
+                queryOptions.where[Op.or] = [
+                    { title: { [Op.iLike]: `%${search}%` } },
+                    { description: { [Op.iLike]: `%${search}%` } },
+                    { '$locationDetails.name$': { [Op.iLike]: `%${search}%` } }
+                ];
+            }
+
             // Add filters if provided
-            if (categoryId) queryOptions.where.categoryId = categoryId;
+            if (filters) {
+                if (filters.guests) {
+                    queryOptions.where.accommodates = { [Op.gte]: parseInt(filters.guests) };
+                }
+                if (filters.categories) {
+                    const categoryIds = Array.isArray(filters.categories) 
+                        ? filters.categories 
+                        : filters.categories.split(',').map(id => parseInt(id.trim()));
+                    queryOptions.where.categoryId = { [Op.in]: categoryIds };
+                }
+            }
+
+            // Add other filters
+            if (categories) {
+                const categoryIds = categories.split(',').map(id => parseInt(id.trim()));
+                console.log('Filtering by category IDs:', categoryIds);
+                queryOptions.where.categoryId = { [Op.in]: categoryIds };
+            }
             if (locationId) queryOptions.where.locationId = locationId;
             if (minPrice) queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
             if (maxPrice) queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.lte]: maxPrice };
             if (minRating) queryOptions.where.averageRating = { [Op.gte]: minRating };
             if (instantBookable) queryOptions.where.instantBookable = instantBookable === 'true';
 
+            console.log('Final query options:', JSON.stringify(queryOptions, null, 2));
+
             // Get listings and total count
             const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
+
+            console.log('Query results - count:', count, 'listings:', listings.length);
 
             res.json({
                 success: true,
@@ -125,14 +159,15 @@ const listingController = {
                 }
             });
         } catch (error) {
-          console.error('Error fetching listings:', error);
-          res.status(500).json({
-            success: false,
-            error: 'Failed to fetch listings',
-            details: error.message,
-          });
+            console.error('Error fetching listings:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch listings',
+                details: error.message,
+            });
         }
     },
+
 
     // Add the deleteListing controller method
     deleteListing: async (req, res) => {
