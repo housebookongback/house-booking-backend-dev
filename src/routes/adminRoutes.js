@@ -13,6 +13,15 @@ router.post('/host-verifications/:id/reject', authenticate, verifyAdmin, adminCo
 
 // Host management routes
 router.get('/hosts', authenticate, verifyAdmin, adminController.listHosts);
+router.get('/hosts/:id', authenticate, verifyAdmin, adminController.getHostDetails);
 router.put('/hosts/:id/verification-status', authenticate, verifyAdmin, adminController.updateHostVerificationStatus);
+
+// User management routes
+router.get('/users', authenticate, verifyAdmin, adminController.listUsers);
+router.get('/users/:id', authenticate, verifyAdmin, adminController.getUserDetails);
+router.post('/users/:id/ban', authenticate, verifyAdmin, adminController.banUser);
+router.post('/users/:id/unban', authenticate, verifyAdmin, adminController.unbanUser);
+router.post('/users/bulk-ban', authenticate, verifyAdmin, adminController.bulkBanUsers);
+router.post('/users/bulk-unban', authenticate, verifyAdmin, adminController.bulkUnbanUsers);
 
 module.exports = router; 
