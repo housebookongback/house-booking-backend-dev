@@ -139,7 +139,13 @@ module.exports = (sequelize, DataTypes) => {
         const conflict = await booking.checkDateConflicts();
         if (conflict.length) throw new Error('Dates conflict with an existing booking');
       },
-      beforeUpdate: async booking => {
+      beforeUpdate: async (booking, options) => {
+        // Skip date conflict check if forceUpdate flag is in options
+        if (options && options.forceUpdate === true) {
+          console.log("Force update enabled - skipping date conflict check");
+          return;
+        }
+        
         if (booking.changed('checkIn') || booking.changed('checkOut')) {
           const conflicts = await booking.checkDateConflicts();
           if (conflicts.length) throw new Error('Updated dates conflict with an existing booking');
