@@ -60,6 +60,7 @@ router.post('/google', authController.googleAuth);
 router.get('/google/url', authController.getGoogleAuthURL);
 router.get('/google/callback', authController.handleGoogleCallback);
 router.post('/checking', authController.checkEmailAndPassword);
+// router.get('/auth/facebook', authController.loginWithFacebook)
 // Add route to get current user (protected by JWT authentication)
 router.get('/me', authenticateJWT, authController.getCurrentUser);
 

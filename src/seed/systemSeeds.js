@@ -1,47 +1,25 @@
 const { faker } = require('@faker-js/faker');
-const { SystemSetting, Document, Notification, Maintenance, Report } = require('../models');
+const db = require('../models');
 
-async function seedSystem() {
+async function seedSystemModels() {
   try {
     // Clean existing data (excluding Photos)
     await db.SystemSetting.destroy({ where: {} });
     await db.Maintenance.destroy({ where: {} });
     await db.Report.destroy({ where: {} });
 
-    // Create system settings
-    await SystemSetting.bulkCreate([
+    // Seed SystemSettings avec des clés uniques
+    const systemSettings = [
       {
         key: 'app_platform_name',
         value: JSON.stringify('House Booking Platform'),
         type: 'string',
-        description: 'The name of the website',
-        isPublic: true
-      },
-      {
-        key: 'maintenance_mode',
-        value: 'false',
-        type: 'boolean',
-        description: 'Whether the site is in maintenance mode',
-        isPublic: true
-      },
-      {
-        key: 'commission_rate',
-        value: '0.10',
-        type: 'number',
-        description: 'Platform commission rate',
-        isPublic: false
-      }
-    ]);
-
-    // Create documents
-    await Document.bulkCreate([
-      {
-        type: 'terms_of_service',
-        title: 'Terms of Service',
-        content: 'By using our service, you agree to these terms...',
-        version: '1.0',
+        description: 'Platform name',
+        category: 'general',
+        isPublic: true,
         isActive: true,
-        publishedAt: new Date('2024-01-01')
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       {
         key: 'app_maintenance_window',
@@ -55,7 +33,8 @@ async function seedSystem() {
         category: 'system',
         isPublic: false,
         isActive: true,
-        publishedAt: new Date('2024-01-01')
+        createdAt: new Date(),
+        updatedAt: new Date()
       }
     ];
 
@@ -140,7 +119,7 @@ async function seedSystem() {
 
     console.log('System models seeded successfully');
   } catch (error) {
-    console.error('❌ Error seeding system models:', error);
+    console.error('Error seeding system models:', error);
     throw error;
   }
 }

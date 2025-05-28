@@ -24,7 +24,7 @@ const PropertyType = db.PropertyType;
 const Listing = db.Listing;
 console.log(Listing,"listingsssssssssssssssssss22222222222");
 const Photo = db.Photo;
-const { ValidationError } = require('sequelize');
+const { ValidationError, literal } = require('sequelize');
 const path = require('path');
 const { Op } = require('sequelize');
 const User = db.User;
@@ -3223,6 +3223,90 @@ const listingController = {
             });
         }
     },
+    getOneListing: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            
+            const listing = await db.Listing.findByPk(listingId, {
+                include: [
+                    // User (host) information with expanded attributes
+                    {
+                        model: db.User,
+                        as: 'host',
+                        include: [{
+                            model: db.HostProfile,
+                            as: 'hostProfile',
+                            attributes: ['id', 'displayName', 'bio', 'profilePicture', 'phoneNumber', 'isSuperhost','superhostSince']
+                        }]
+                    },
+                    // Property Type information
+                    {
+                        model: db.PropertyType,
+                        as: 'propertyType',
+                    },
+                    {
+                        model: db.RoomType,
+                        as: 'roomType',
+                        required: false,
+                        attributes: ['id', 'name', 'description', 'icon']
+                    },
+                    // Category information
+                    {
+                        model: db.Category,
+                        as: 'category',
+                        required: false,
+                        attributes: ['id', 'name', 'description', 'icon']
+                    },
+                    // Photos
+                    {
+                        model: db.Photo,
+                        as: 'photos',
+                        required: false
+                    },
+                    // Amenities
+                    {
+                        model: db.Amenity,
+                        as: 'amenities',
+                        through: { attributes: [] } // Exclude junction table attributes
+                    },
+                    // Property Rules
+                    {
+                        model: db.PropertyRule,
+                        as: 'propertyRules',
+                    },
+                    // Location details
+                    {
+                        model: db.Location,
+                        as: 'locationDetails',
+                    }
+                ],
+                attributes: {
+                    exclude: ['deletedAt', 'createdAt', 'updatedAt']
+                }
+            });
+
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found'
+                });
+            }
+
+            res.json({
+                success: true,
+                data: listing
+            });
+
+        } catch (error) {
+            console.error('Error fetching listing:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch listing details',
+                details: error.message
+            });
+        }
+    }
+    
 };
 
 module.exports = listingController;

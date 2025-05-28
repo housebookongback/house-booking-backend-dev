@@ -1,13 +1,5 @@
 const { faker } = require('@faker-js/faker');
-const { 
-  Booking,
-  BookingRequest,
-  BookingCalendar,
-  BookingChange,
-  BookingCancellation,
-  SeasonalPricing,
-  PriceRule
-} = require('../models');
+const db = require('../models');
 console.log("d ")
 async function seedBookingModels() {
   // const transaction = await db.transaction();
@@ -24,6 +16,7 @@ async function seedBookingModels() {
 
     // Fetch existing listings, guests, and hosts
     const listings = await db.Listing.scope('all').findAll({ raw: true });
+    console.log("listing",listings)
     if (listings.length === 0) {
       throw new Error('No listings found. Please ensure listings are seeded before running booking seeds.');
     }
@@ -58,7 +51,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await PriceRule.bulkCreate(priceRules);
+    await db.PriceRule.bulkCreate(priceRules);
 
     const seasonalPricing = Array.from({ length: 10 }).map(() => ({
       listingId: faker.helpers.arrayElement(listingIds),
@@ -71,7 +64,7 @@ async function seedBookingModels() {
       createdAt: new Date(),
       updatedAt: new Date(),
     }));
-    await SeasonalPricing.bulkCreate(seasonalPricing);
+    await db.SeasonalPricing.bulkCreate(seasonalPricing);
 
     const bookings = [];
     for (let i = 0; i < 10; i++) {
@@ -96,7 +89,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       });
     }
-    const createdBookings = await Booking.bulkCreate(bookings);
+    const createdBookings = await db.Booking.bulkCreate(bookings);
 
     // Create booking requests
     const bookingRequests = createdBookings
@@ -120,7 +113,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await BookingRequest.bulkCreate(bookingRequests);
+    await db.BookingRequest.bulkCreate(bookingRequests);
 
     // Create booking changes
     const bookingChanges = createdBookings
@@ -152,7 +145,7 @@ async function seedBookingModels() {
         };
       });
 
-    await BookingChange.bulkCreate(bookingChanges);
+    await db.BookingChange.bulkCreate(bookingChanges);
 
     // Create booking cancellations
     const bookingCancellations = createdBookings
@@ -170,7 +163,7 @@ async function seedBookingModels() {
         updatedAt: new Date(),
       }));
 
-    await BookingCancellation.bulkCreate(bookingCancellations);
+    await db.BookingCancellation.bulkCreate(bookingCancellations);
 
     // Create booking calendars for each listing
     const bookingCalendars = [];

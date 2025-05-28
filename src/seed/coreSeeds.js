@@ -1,50 +1,59 @@
-const { User, Role, UserRoles } = require('../models');
+const { faker } = require('@faker-js/faker');
+const bcrypt = require('bcryptjs');
+const sequelize  = require('../models').sequelize.models
 
-async function seedCore() {
+async function seedCoreModels() {
   try {
-    // Create roles
-    const roles = await Role.bulkCreate([
-      { name: 'admin', description: 'Administrator' },
-      { name: 'host', description: 'Property Host' },
-      { name: 'guest', description: 'Property Guest' }
-    ]);
+    // await sequelize.Maintenance.destroy({ where: {} });
+    // Clean existing data
+    await sequelize.UserRoles.destroy({   where: {},});
+    await sequelize.User.destroy({ where: {},      cascade: true,
+      individualHooks: true });
+    await sequelize.Role.destroy({ where: {} });
 
-    // Create admin user
-    const admin = await User.create({
-      name: 'Admin User',
-      email: 'admin@example.com',
-      password: 'admin123', // This should be hashed in production
-      isActive: true
+    // Seed Roles
+    const roles = ['user', 'host', 'admin'].map(roleName => ({
+      name: roleName,
+      description: `${roleName.charAt(0).toUpperCase() + roleName.slice(1)} role`,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    const createdRoles = await sequelize.Role.bulkCreate(roles);
+
+    // Seed Users
+    const users = Array.from({ length: 10 }).map(() => {
+      const firstName = faker.person.firstName();
+      const lastName = faker.person.lastName();
+      return {
+        name: `${firstName} ${lastName}`,
+        email: faker.internet.email({ firstName, lastName }),
+        passwordHash: bcrypt.hashSync('password123', 10),
+        phone: faker.phone.number(),
+        isVerified: faker.datatype.boolean(),
+        emailVerifiedAt: faker.date.past(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
     });
 
-    // Create host user
-    const host = await User.create({
-      name: 'Host User',
-      email: 'host@example.com',
-      password: 'host123', // This should be hashed in production
-      isActive: true
-    });
+    const createdUsers = await sequelize.User.bulkCreate(users);
 
-    // Create guest user
-    const guest = await User.create({
-      name: 'Guest User',
-      email: 'guest@example.com',
-      password: 'guest123', // This should be hashed in production
-      isActive: true
-    });
+    // Seed UserRoles
+    const userRoles = createdUsers.map(user => ({
+      userId: user.id,
+      roleId: createdRoles[Math.floor(Math.random() * createdRoles.length)].id,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
 
-    // Assign roles to users
-    await UserRoles.bulkCreate([
-      { userId: admin.id, roleId: roles[0].id }, // Admin role
-      { userId: host.id, roleId: roles[1].id },  // Host role
-      { userId: guest.id, roleId: roles[2].id }  // Guest role
-    ]);
+    await sequelize.UserRoles.bulkCreate(userRoles);
 
-    console.log('✅ Core models seeded successfully');
+    console.log('Core models seeded successfully');
   } catch (error) {
-    console.error('❌ Error seeding core models:', error);
+    console.error('Error seeding core models:', error);
     throw error;
   }
 }
-
-module.exports = seedCore;
+// seedCoreModels();
+module.exports = seedCoreModels;

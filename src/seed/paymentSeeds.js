@@ -1,65 +1,123 @@
 const { faker } = require('@faker-js/faker');
-const { Payment, PayoutAccount } = require('../models');
+const db = require('../models')
 
-async function seedPayment() {
+async function seedPaymentModels() {
   try {
-    // Create sample payments
-    await Payment.bulkCreate([
-      {
-        bookingId: 1, // Assuming first booking ID is 1
-        amount: 2000,
-        currency: 'USD',
-        status: 'completed',
-        paymentMethod: 'credit_card',
-        transactionId: 'txn_123456',
-        paymentDate: new Date('2024-03-01'),
-        refundAmount: 0,
-        refundDate: null
-      },
-      {
-        bookingId: 2, // Assuming second booking ID is 2
-        amount: 600,
-        currency: 'USD',
-        status: 'pending',
-        paymentMethod: 'paypal',
-        transactionId: 'txn_789012',
-        paymentDate: null,
-        refundAmount: 0,
-        refundDate: null
-      }
-    ]);
+    // Clean existing data
+    await db.Payment.destroy({ where: {} });
+    await db.PayoutAccount.destroy({ where: {} });
 
-    // Create payout accounts
-    await PayoutAccount.bulkCreate([
-      {
-        userId: 2, // Assuming host user ID is 2
-        type: 'bank_account',
-        accountNumber: '****1234',
-        routingNumber: '****5678',
-        bankName: 'Chase Bank',
-        accountHolderName: 'John Doe',
+    // Get some bookings to associate payments with
+    const bookings = await db.Booking.findAll({ limit: 10 });
+    
+    if (!bookings.length) {
+      console.log('No bookings found. Please seed bookings first.');
+      return;
+    }
+
+    // Get host profiles for payout accounts
+    const hostProfiles = await db.HostProfile.findAll();
+    
+    if (!hostProfiles.length) {
+      console.log('No host profiles found. Please seed hosts first.');
+      return;
+    }
+
+    // Seed Payments
+    const payments = Array.from({ length: 20 }).map(() => {
+      const booking = faker.helpers.arrayElement(bookings);
+      return {
+        bookingId: booking.id,
+        amount: faker.number.float({ min: 50, max: 1000, precision: 0.01 }),
+        currency: faker.helpers.arrayElement(['USD', 'EUR', 'GBP']),
+        paymentMethod: faker.helpers.arrayElement(['credit_card', 'bank_transfer', 'paypal', 'stripe']),
+        paymentDetails: {
+          transactionId: faker.string.alphanumeric(20),
+          provider: faker.helpers.arrayElement(['visa', 'mastercard', 'paypal', 'stripe']),
+          last4: faker.finance.creditCardNumber('####'),
+        },
+        idempotencyKey: faker.string.uuid(),
+        status: faker.helpers.arrayElement(['pending', 'processing', 'completed', 'failed', 'refunded', 'disputed']),
+        processedAt: faker.date.past(),
+        completedAt: faker.date.past(),
+        metadata: {
+          ipAddress: faker.internet.ip(),
+          userAgent: faker.internet.userAgent(),
+        },
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+
+    await db.Payment.bulkCreate(payments);
+
+    // Seed PayoutAccounts
+    const payoutAccounts = hostProfiles.map(host => {
+      const accountType = faker.helpers.arrayElement(['bank_account', 'paypal', 'stripe']);
+      let accountDetails;
+
+      switch (accountType) {
+        case 'bank_account':
+          accountDetails = {
+            bankName: faker.company.name(),
+            accountNumber: faker.finance.accountNumber(),
+            routingNumber: faker.finance.routingNumber(),
+            accountHolderName: faker.person.fullName(),
+            accountType: faker.helpers.arrayElement(['checking', 'savings'])
+          };
+          break;
+        case 'paypal':
+          accountDetails = {
+            email: faker.internet.email(),
+            accountId: faker.string.alphanumeric(16),
+            accountStatus: 'verified'
+          };
+          break;
+        case 'stripe':
+          accountDetails = {
+            accountId: `acct_${faker.string.alphanumeric(16)}`,
+            accountStatus: 'verified',
+            country: faker.location.countryCode(),
+            currency: faker.finance.currencyCode()
+          };
+          break;
+      }
+
+      return {
+        hostProfileId: host.id,
+        accountType,
+        accountDetails,
         isDefault: true,
-        status: 'verified'
-      },
-      {
-        userId: 2,
-        type: 'paypal',
-        email: 'host@example.com',
-        isDefault: false,
-        status: 'verified'
-      }
-    ]);
+        isVerified: faker.datatype.boolean(),
+        verificationStatus: faker.helpers.arrayElement(['pending', 'verified', 'rejected']),
+        verificationDocuments: accountType === 'bank_account' ? {
+          proofOfAccount: faker.system.filePath(),
+          identityDocument: faker.system.filePath()
+        } : null,
+        lastUsedAt: faker.date.past(),
+        metadata: {
+          createdFrom: faker.helpers.arrayElement(['web', 'mobile', 'api']),
+          ipAddress: faker.internet.ip()
+        },
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
 
-    console.log('✅ Payment models seeded successfully');
+    await db.PayoutAccount.bulkCreate(payoutAccounts);
+
+    console.log('Payment and PayoutAccount models seeded successfully');
   } catch (error) {
-    console.error('❌ Error seeding payment models:', error);
+    console.error('Error seeding payment models:', error);
     throw error;
   }
 }
-
-module.exports = seedPayment;
+// seedPaymentModels()
+module.exports = seedPaymentModels;
 
 // Execute if called directly
 // if (require.main === module) {
-//   seedPayment();
+//   seedPaymentModels();
 // }
