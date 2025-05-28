@@ -109,5 +109,5 @@ async function seedPhotos() {
     throw error;
   }
 }
-
+seedPhotos()
 module.exports = seedPhotos;
