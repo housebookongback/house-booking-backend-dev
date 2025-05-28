@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticate } = require('../middleware/authMiddleware');
 const { verifyAdmin } = require('../middleware/adminMiddleware');
 const adminController = require('../controllers/adminController');
+const reviewController = require('../controllers/reviewController');
 
 // Dashboard stats
 router.get('/dashboard/stats', authenticate, verifyAdmin, adminController.getDashboardStats);
@@ -37,5 +38,14 @@ router.delete('/listings/:id', authenticate, verifyAdmin, adminController.delete
 router.get('/bookings', authenticate, verifyAdmin, adminController.listBookings);
 router.get('/bookings/:id', authenticate, verifyAdmin, adminController.getBookingDetails);
 router.patch('/bookings/:id/status', authenticate, verifyAdmin, adminController.updateBookingStatus);
+
+// Review management routes
+router.get('/reviews', authenticate, verifyAdmin, adminController.listAllReviews);
+router.get('/reviews/:id', authenticate, verifyAdmin, adminController.getReviewDetails);
+router.patch('/reviews/:id/visibility', authenticate, verifyAdmin, adminController.updateReviewVisibility);
+router.delete('/reviews/:id', authenticate, verifyAdmin, adminController.deleteReview);
+
+// Property types route
+router.get('/property-types', authenticate, verifyAdmin, reviewController.getPropertyTypes);
 
 module.exports = router; 

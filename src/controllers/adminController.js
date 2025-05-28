@@ -1420,6 +1420,281 @@ const adminController = {
             console.error('Error fetching dashboard stats:', error);
             res.status(500).json({ message: 'Error fetching dashboard stats', error: error.message });
         }
+    },
+
+    // Get all reviews for admin management
+    listAllReviews: async (req, res) => {
+        try {
+            const db = require('../models');
+            const { page = 1, limit = 10, status, rating, property, search } = req.query;
+            const offset = (page - 1) * limit;
+            
+            // Base query conditions
+            const where = {};
+            
+            // Filter by visibility status if provided
+            if (status === 'true') {
+                where.isPublic = true;
+            } else if (status === 'false') {
+                where.isPublic = false;
+            }
+            
+            // Filter by rating if provided
+            if (rating) {
+                where.rating = parseInt(rating);
+            }
+            
+            // Get total count of matching reviews
+            const totalReviews = await db.Review.count({ where });
+            
+            // Fetch reviews with pagination
+            const reviews = await db.Review.findAll({
+                where,
+                limit: parseInt(limit),
+                offset: parseInt(offset),
+                order: [['createdAt', 'DESC']],
+                include: [
+                    {
+                        model: db.User,
+                        as: 'reviewer',
+                        attributes: ['id', 'name', 'email', 'profilePicture']
+                    },
+                    {
+                        model: db.User,
+                        as: 'reviewed',
+                        attributes: ['id', 'name', 'email', 'profilePicture']
+                    },
+                    {
+                        model: db.Booking,
+                        as: 'booking',
+                        include: [
+                            {
+                                model: db.Listing,
+                                as: 'listing',
+                                attributes: ['id', 'title', 'propertyTypeId'],
+                                where: property ? { id: property } : {}
+                            }
+                        ]
+                    }
+                ]
+            });
+            
+            // Format the reviews for the response
+            const formattedReviews = reviews.map(review => {
+                return {
+                    id: review.id,
+                    bookingId: review.bookingId,
+                    reviewerId: review.reviewerId,
+                    reviewedId: review.reviewedId,
+                    rating: review.rating,
+                    comment: review.comment,
+                    type: review.type,
+                    isPublic: review.isPublic,
+                    response: review.response,
+                    responseDate: review.responseDate,
+                    createdAt: review.createdAt,
+                    reviewer: review.reviewer ? {
+                        id: review.reviewer.id,
+                        name: review.reviewer.name,
+                        email: review.reviewer.email,
+                        profilePicture: review.reviewer.profilePicture
+                    } : null,
+                    reviewed: review.reviewed ? {
+                        id: review.reviewed.id,
+                        name: review.reviewed.name,
+                        email: review.reviewed.email,
+                        profilePicture: review.reviewed.profilePicture
+                    } : null,
+                    property: review.booking?.listing ? {
+                        id: review.booking.listing.id,
+                        title: review.booking.listing.title,
+                        propertyTypeId: review.booking.listing.propertyTypeId
+                    } : null
+                };
+            });
+            
+            res.json({
+                success: true,
+                data: formattedReviews,
+                pagination: {
+                    total: totalReviews,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    pages: Math.ceil(totalReviews / limit)
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching reviews:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch reviews'
+            });
+        }
+    },
+
+    // Get details of a specific review
+    getReviewDetails: async (req, res) => {
+        try {
+            const db = require('../models');
+            const { id } = req.params;
+            
+            const review = await db.Review.findByPk(id, {
+                include: [
+                    {
+                        model: db.User,
+                        as: 'reviewer',
+                        attributes: ['id', 'name', 'email', 'profilePicture']
+                    },
+                    {
+                        model: db.User,
+                        as: 'reviewed',
+                        attributes: ['id', 'name', 'email', 'profilePicture']
+                    },
+                    {
+                        model: db.Booking,
+                        as: 'booking',
+                        include: [
+                            {
+                                model: db.Listing,
+                                as: 'listing',
+                                attributes: ['id', 'title', 'hostId', 'propertyTypeId']
+                            }
+                        ]
+                    },
+                    {
+                        model: db.ReviewResponse,
+                        as: 'reviewResponse'
+                    }
+                ]
+            });
+            
+            if (!review) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Review not found'
+                });
+            }
+            
+            // Format the review for the response
+            const formattedReview = {
+                id: review.id,
+                bookingId: review.bookingId,
+                reviewerId: review.reviewerId,
+                reviewedId: review.reviewedId,
+                rating: review.rating,
+                comment: review.comment,
+                type: review.type,
+                isPublic: review.isPublic,
+                response: review.response,
+                responseDate: review.responseDate,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt,
+                reviewer: review.reviewer ? {
+                    id: review.reviewer.id,
+                    name: review.reviewer.name,
+                    email: review.reviewer.email,
+                    profilePicture: review.reviewer.profilePicture
+                } : null,
+                reviewed: review.reviewed ? {
+                    id: review.reviewed.id,
+                    name: review.reviewed.name,
+                    email: review.reviewed.email,
+                    profilePicture: review.reviewed.profilePicture
+                } : null,
+                property: review.booking?.listing ? {
+                    id: review.booking.listing.id,
+                    title: review.booking.listing.title,
+                    hostId: review.booking.listing.hostId,
+                    propertyTypeId: review.booking.listing.propertyTypeId
+                } : null
+            };
+            
+            res.json({
+                success: true,
+                data: formattedReview
+            });
+        } catch (error) {
+            console.error('Error fetching review details:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch review details'
+            });
+        }
+    },
+
+    // Update review visibility (publish/hide)
+    updateReviewVisibility: async (req, res) => {
+        try {
+            const db = require('../models');
+            const { id } = req.params;
+            const { isPublic } = req.body;
+            
+            if (typeof isPublic !== 'boolean') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid request - isPublic must be a boolean'
+                });
+            }
+            
+            const review = await db.Review.findByPk(id);
+            
+            if (!review) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Review not found'
+                });
+            }
+            
+            await review.update({ isPublic });
+            
+            res.json({
+                success: true,
+                message: `Review ${isPublic ? 'published' : 'hidden'} successfully`,
+                data: { id: review.id, isPublic }
+            });
+        } catch (error) {
+            console.error('Error updating review visibility:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to update review visibility'
+            });
+        }
+    },
+
+    // Delete a review
+    deleteReview: async (req, res) => {
+        try {
+            const db = require('../models');
+            const { id } = req.params;
+            
+            const review = await db.Review.findByPk(id);
+            
+            if (!review) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Review not found'
+                });
+            }
+            
+            // Also delete any response
+            await db.ReviewResponse.destroy({
+                where: { reviewId: id }
+            });
+            
+            // Delete the review
+            await review.destroy();
+            
+            res.json({
+                success: true,
+                message: 'Review deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting review:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to delete review'
+            });
+        }
     }
 };
 
