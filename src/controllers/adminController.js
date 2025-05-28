@@ -1,4 +1,4 @@
-const { User, HostVerification, HostProfile, Role, sequelize, Booking, Payment } = require('../models');
+const { User, HostVerification, HostProfile, Role, sequelize, Booking, Payment, Listing, Location, PropertyType, Photo, Amenity, PropertyRule } = require('../models');
 const { Op } = require('sequelize');
 
 const adminController = {
@@ -797,6 +797,354 @@ const adminController = {
         } catch (error) {
             console.error('Error fetching host details:', error);
             res.status(500).json({ message: 'Error fetching host details', error: error.message });
+        }
+    },
+
+    // List all properties for admin
+    listAllProperties: async (req, res) => {
+        try {
+            const { page = 1, limit = 10, status, sortBy = 'createdAt', sortOrder = 'DESC' } = req.query;
+            
+            const offset = (page - 1) * limit;
+            const whereClause = {};
+            
+            // Filter by status if provided
+            if (status) {
+                whereClause.status = status;
+            }
+            
+            // First, get all listings directly using a simple query
+            const listings = await sequelize.query(
+                `SELECT 
+                    l.id, 
+                    l.title, 
+                    l.status, 
+                    CAST(l."pricePerNight" AS DECIMAL(10,2)) as "pricePerNight", 
+                    l."hostId", 
+                    l."propertyTypeId", 
+                    l."locationId", 
+                    l."createdAt", 
+                    l."updatedAt"
+                 FROM "Listings" l
+                 ORDER BY l."${sortBy}" ${sortOrder}
+                 LIMIT :limit OFFSET :offset`,
+                {
+                    replacements: { 
+                        limit: parseInt(limit),
+                        offset: parseInt(offset)
+                    },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            // Get total count
+            const countResult = await sequelize.query(
+                'SELECT COUNT(*) as total FROM "Listings"',
+                {
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            const count = parseInt(countResult[0].total);
+            
+            // Format response
+            const formattedListings = listings.map(listing => {
+                // Debug log the raw price value
+                console.log(`Backend raw pricePerNight for listing ${listing.id}:`, listing.pricePerNight, typeof listing.pricePerNight);
+                
+                // Convert pricePerNight to a valid number or default to 0
+                const pricePerNight = typeof listing.pricePerNight === 'number' && !isNaN(listing.pricePerNight) 
+                    ? listing.pricePerNight 
+                    : typeof listing.pricePerNight === 'string' && !isNaN(parseFloat(listing.pricePerNight))
+                        ? parseFloat(listing.pricePerNight)
+                        : 0;
+                
+                console.log(`Backend formatted pricePerNight for listing ${listing.id}:`, pricePerNight);
+                
+                return {
+                    id: listing.id,
+                    title: listing.title || 'Untitled Property',
+                    status: listing.status || 'unknown',
+                    pricePerNight: pricePerNight,
+                    location: 'Location info available on detail view',
+                    propertyType: 'Property type info available on detail view',
+                    host: { 
+                        id: listing.hostId,
+                        name: 'Host info available on detail view',
+                        email: '',
+                        status: 'active'
+                    },
+                    featuredPhotoUrl: null,
+                    createdAt: listing.createdAt,
+                    updatedAt: listing.updatedAt
+                };
+            });
+            
+            // Adjust response format to match frontend expectations
+            res.json({
+                listings: formattedListings,
+                total: count,
+                page: parseInt(page),
+                totalPages: Math.ceil(count / limit)
+            });
+        } catch (error) {
+            console.error('Error fetching listings:', error);
+            res.status(500).json({ message: 'Error fetching property listings', error: error.message });
+        }
+    },
+    
+    // Get detailed property information
+    getPropertyDetails: async (req, res) => {
+        try {
+            const listingId = req.params.id;
+            
+            // Get the listing directly using SQL
+            const listings = await sequelize.query(
+                `SELECT l.* 
+                 FROM "Listings" l
+                 WHERE l.id = :listingId`,
+                {
+                    replacements: { listingId },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            if (!listings.length) {
+                return res.status(404).json({ message: 'Property not found' });
+            }
+            
+            const listing = listings[0];
+            
+            // Get host information
+            const hosts = await sequelize.query(
+                `SELECT u.id, u.name, u.email, u.status
+                 FROM "Users" u
+                 WHERE u.id = :hostId`,
+                {
+                    replacements: { hostId: listing.hostId },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            const host = hosts.length ? hosts[0] : null;
+            
+            // Get property type
+            const propertyTypes = await sequelize.query(
+                `SELECT pt.id, pt.name, pt.description
+                 FROM "PropertyTypes" pt
+                 WHERE pt.id = :propertyTypeId`,
+                {
+                    replacements: { propertyTypeId: listing.propertyTypeId },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            const propertyType = propertyTypes.length ? propertyTypes[0] : null;
+            
+            // Get location
+            const locations = await sequelize.query(
+                `SELECT l.id, l.name
+                 FROM "Locations" l
+                 WHERE l.id = :locationId`,
+                {
+                    replacements: { locationId: listing.locationId },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            const location = locations.length ? locations[0] : null;
+            
+            // Get booking stats
+            const bookingStats = await sequelize.query(
+                `SELECT 
+                    COUNT(*) as totalBookings,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completedBookings,
+                    COUNT(CASE WHEN status = 'cancelled' THEN 1 END) as cancelledBookings,
+                    SUM(CASE WHEN status = 'completed' THEN "totalPrice" ELSE 0 END) as totalRevenue
+                 FROM "Bookings"
+                 WHERE "listingId" = :listingId`,
+                {
+                    replacements: { listingId },
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            // Format response
+            const response = {
+                ...listing,
+                host,
+                propertyType,
+                location,
+                stats: {
+                    totalBookings: parseInt(bookingStats[0]?.totalBookings || 0),
+                    completedBookings: parseInt(bookingStats[0]?.completedBookings || 0),
+                    cancelledBookings: parseInt(bookingStats[0]?.cancelledBookings || 0),
+                    totalRevenue: bookingStats[0]?.totalRevenue ? parseFloat(bookingStats[0].totalRevenue) : 0
+                }
+            };
+            
+            res.json(response);
+        } catch (error) {
+            console.error('Error fetching property details:', error);
+            res.status(500).json({ message: 'Error fetching property details', error: error.message });
+        }
+    },
+    
+    // Update property status
+    updatePropertyStatus: async (req, res) => {
+        try {
+            const listingId = req.params.id;
+            const { status, reason } = req.body;
+            
+            // Validate status
+            const validStatuses = ['draft', 'published', 'under_review', 'rejected', 'suspended'];
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({ 
+                    message: 'Invalid status value', 
+                    validValues: validStatuses 
+                });
+            }
+            
+            // Find the listing
+            const listing = await Listing.findByPk(listingId);
+            
+            if (!listing) {
+                return res.status(404).json({ message: 'Property not found' });
+            }
+            
+            // Update listing status
+            const updateData = { 
+                status,
+                adminNotes: reason || listing.adminNotes
+            };
+            
+            // Add rejection or suspension details if applicable
+            if (status === 'rejected' || status === 'suspended') {
+                if (!reason) {
+                    return res.status(400).json({ message: 'Reason is required for rejection or suspension' });
+                }
+                
+                updateData.lastStatusChangeReason = reason;
+                updateData.lastStatusChangeDate = new Date();
+                updateData.lastStatusChangeBy = req.admin.id;
+            }
+            
+            await listing.update(updateData);
+            
+            res.json({ 
+                message: `Property status updated to ${status}`, 
+                listing: { 
+                    id: listing.id, 
+                    title: listing.title,
+                    status: listing.status 
+                } 
+            });
+        } catch (error) {
+            console.error('Error updating property status:', error);
+            res.status(500).json({ message: 'Error updating property status', error: error.message });
+        }
+    },
+    
+    // Delete a property
+    deleteProperty: async (req, res) => {
+        try {
+            const listingId = req.params.id;
+            
+            // Check if listing exists
+            const listing = await Listing.findByPk(listingId);
+            
+            if (!listing) {
+                return res.status(404).json({ message: 'Property not found' });
+            }
+            
+            // Check if listing has active bookings
+            const activeBookings = await Booking.count({
+                where: {
+                    listingId,
+                    status: ['pending', 'confirmed', 'in_progress']
+                }
+            });
+            
+            if (activeBookings > 0) {
+                return res.status(400).json({ 
+                    message: 'Cannot delete property with active bookings',
+                    activeBookingsCount: activeBookings
+                });
+            }
+            
+            // Delete the listing
+            await listing.destroy();
+            
+            res.json({ message: 'Property deleted successfully' });
+        } catch (error) {
+            console.error('Error deleting property:', error);
+            res.status(500).json({ message: 'Error deleting property', error: error.message });
+        }
+    },
+
+    // Get dashboard stats
+    getDashboardStats: async (req, res) => {
+        try {
+            // Get total users count
+            const usersCount = await User.count();
+            
+            // Get total hosts count
+            const hostsCount = await HostProfile.count();
+            
+            // Get total properties count
+            const propertiesCount = await Listing.count();
+            
+            // Get total bookings count
+            const bookingsCount = await Booking.count();
+            
+            // Get total revenue
+            const revenueResult = await sequelize.query(
+                `SELECT SUM(amount) as total FROM "Payments" WHERE status = 'completed'`,
+                { type: sequelize.QueryTypes.SELECT }
+            );
+            
+            // Get recent bookings
+            const recentBookings = await Booking.findAll({
+                limit: 5,
+                order: [['createdAt', 'DESC']],
+                include: [
+                    {
+                        model: User,
+                        as: 'guest',
+                        attributes: ['id', 'name', 'email']
+                    },
+                    {
+                        model: Listing,
+                        as: 'listing',
+                        attributes: ['id', 'title']
+                    }
+                ]
+            });
+            
+            // Get recent users
+            const recentUsers = await User.findAll({
+                limit: 5,
+                order: [['createdAt', 'DESC']],
+                attributes: { exclude: ['passwordHash', 'passwordResetToken', 'passwordResetExpires', 'emailVerificationToken'] }
+            });
+            
+            // Format response
+            res.json({
+                counts: {
+                    users: usersCount,
+                    hosts: hostsCount,
+                    properties: propertiesCount,
+                    bookings: bookingsCount,
+                    revenue: revenueResult[0]?.total ? parseFloat(revenueResult[0].total) : 0
+                },
+                recent: {
+                    bookings: recentBookings,
+                    users: recentUsers
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching dashboard stats:', error);
+            res.status(500).json({ message: 'Error fetching dashboard stats', error: error.message });
         }
     }
 };
