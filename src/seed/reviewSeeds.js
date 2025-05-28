@@ -1,13 +1,13 @@
 const { faker } = require('@faker-js/faker');
-const { Review, ReviewResponse, ReviewReport } = require('../models');
+const review = require('../models/review');
 const db = require('../models')
 
 async function seedReviewModels() {
   try {
     // Clean existing data
-    await ReviewReport.destroy({ where: {} });
-    await ReviewResponse.destroy({ where: {} });
-    await Review.destroy({ where: {} });
+    await db.ReviewReport.destroy({ where: {} });
+    await db.ReviewResponse.destroy({ where: {} });
+    await db.Review.destroy({ where: {} });
 
     // Get bookings to ensure valid relationships
     const bookings = await db.Booking.findAll({ 
@@ -64,7 +64,7 @@ async function seedReviewModels() {
       });
     }
 
-    const createdReviews = await Review.bulkCreate(reviews);
+    const createdReviews = await db.Review.bulkCreate(reviews);
 
     // Seed ReviewResponses
     const responses = createdReviews
@@ -81,7 +81,7 @@ async function seedReviewModels() {
         updatedAt: new Date()
       }));
 
-    await ReviewResponse.bulkCreate(responses);
+    await db.ReviewResponse.bulkCreate(responses);
 
     // Seed ReviewReports
     const reports = createdReviews
@@ -109,7 +109,7 @@ async function seedReviewModels() {
         updatedAt: new Date()
       }));
 
-    await ReviewReport.bulkCreate(reports);
+    await db.ReviewReport.bulkCreate(reports);
 
     console.log('Review models seeded successfully');
   } catch (error) {

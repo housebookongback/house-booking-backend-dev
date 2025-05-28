@@ -1,15 +1,18 @@
 const db = require('../models');
 
 // Import all seed files
-const seedCore = require('./coreSeeds');
-const seedProperty = require('./propertySeeds');
-const seedBooking = require('./bookingSeeds');
-const seedPayment = require('./paymentSeeds');
-const seedReview = require('./reviewSeeds');
-const seedSearch = require('./searchSeeds');
-const seedCommunication = require('./communicationSeeds');
-const seedAnalytics = require('./analyticsSeeds');
-const seedSystem = require('./systemSeeds');
+const coreSeeds = require('./coreSeeds');
+const verificationSeeds = require('./verificationSeeds');
+const propertySeeds = require('./propertySeeds');
+const hostSeeds = require('./hostSeeds');
+const guestSeeds = require('./guestSeeds');
+const bookingSeeds = require('./bookingSeeds');
+const paymentSeeds = require('./paymentSeeds');
+const reviewSeeds = require('./reviewSeeds');
+const searchSeeds = require('./searchSeeds');
+const communicationSeeds = require('./communicationSeeds');
+const analyticsSeeds = require('./analyticsSeeds');
+const systemSeeds = require('./systemSeeds');
 
 async function seedAll() {
   try {
@@ -27,8 +30,12 @@ async function seedAll() {
     await propertySeeds();
     console.log('✅ Property models seeded');
 
-    // Booking-related models
-    await seedBooking();
+    // Guest management models
+    await guestSeeds();
+    console.log('✅ Guest models seeded');
+
+    // Booking and pricing models
+    await bookingSeeds();
     console.log('✅ Booking models seeded');
     
     await hostSeeds();
@@ -37,27 +44,27 @@ async function seedAll() {
     await paymentSeeds();
     console.log('✅ Payment models seeded');
 
-    // Review-related models
-    await seedReview();
+    // Review system models
+    await reviewSeeds();
     console.log('✅ Review models seeded');
 
-    // Search-related models
-    await seedSearch();
+    // Search and discovery models
+    await searchSeeds();
     console.log('✅ Search models seeded');
 
-    // Communication-related models
-    await seedCommunication();
+    // Communication models
+    await communicationSeeds();
     console.log('✅ Communication models seeded');
 
-    // Analytics-related models
-    await seedAnalytics();
+    // Analytics models
+    await analyticsSeeds();
     console.log('✅ Analytics models seeded');
 
-    // System-related models
-    await seedSystem();
+    // System models
+    await systemSeeds();
     console.log('✅ System models seeded');
 
-    console.log('🎉 All models seeded successfully!');
+    console.log('✅ All seeding completed successfully!');
   } catch (error) {
     console.error('❌ Error during seeding:', error);
     throw error; // Re-throw the error to properly handle it

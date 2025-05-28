@@ -1,8 +1,7 @@
 const { faker } = require('@faker-js/faker');
-const { Message, MessageAttachment, Conversation, ConversationParticipant } = require('../models');
-const db = require('../models');
+const db= require('../models')
 
-async function seedCommunication() {
+async function seedCommunicationModels() {
   try {
     // Clean existing data
     await db.MessageAttachment.destroy({ where: {} });
@@ -23,73 +22,119 @@ async function seedCommunication() {
       throw new Error('No listings found. Please seed listings first.');
     }
 
-    // Create sample conversations
-    const conversations = await Conversation.bulkCreate([
-      {
-        type: 'booking',
-        status: 'active',
-        lastMessageAt: new Date('2024-03-01'),
-        metadata: {
-          bookingId: 1
+    // Seed Conversations
+    const conversations = Array.from({ length: 10 }).map(() => {
+      const listing = faker.helpers.arrayElement(listings);
+      return {
+        listingId: listing.id,
+        title: `Conversation about ${listing.title}`,
+        lastMessageAt: faker.date.past(),
+        isActive: true,
+        status: faker.helpers.arrayElement(['active', 'archived', 'blocked']),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+    });
+
+    const createdConversations = await db.Conversation.bulkCreate(conversations);
+
+    // Seed ConversationParticipants
+    const conversationParticipants = createdConversations.flatMap(conv => {
+      const host = faker.helpers.arrayElement(users);
+      const guest = faker.helpers.arrayElement(users.filter(u => u.id !== host.id));
+      
+      return [
+        {
+          conversationId: conv.id,
+          userId: host.id,
+          role: 'host',
+          lastReadAt: faker.date.past(),
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        },
+        {
+          conversationId: conv.id,
+          userId: guest.id,
+          role: 'guest',
+          lastReadAt: faker.date.past(),
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
         }
-      }
-    ]);
+      ];
+    });
 
-    // Create conversation participants
-    await ConversationParticipant.bulkCreate([
-      {
-        conversationId: conversations[0].id,
-        userId: 2, // Host user
-        role: 'host',
-        status: 'active',
-        lastReadAt: new Date('2024-03-01')
-      },
-      {
-        conversationId: conversations[0].id,
-        userId: 3, // Guest user
-        role: 'guest',
-        status: 'active',
-        lastReadAt: new Date('2024-03-01')
-      }
-    ]);
+    await db.ConversationParticipant.bulkCreate(conversationParticipants);
 
-    // Create messages
-    const messages = await Message.bulkCreate([
-      {
-        conversationId: conversations[0].id,
-        senderId: 3, // Guest
-        content: 'Hi, I\'m interested in booking your property.',
-        type: 'text',
-        status: 'delivered',
-        sentAt: new Date('2024-03-01T10:00:00')
-      },
-      {
-        conversationId: conversations[0].id,
-        senderId: 2, // Host
-        content: 'Hello! Yes, the property is available for your dates.',
-        type: 'text',
-        status: 'delivered',
-        sentAt: new Date('2024-03-01T10:05:00')
-      }
-    ]);
+    // Seed Messages
+    const messages = createdConversations.flatMap(conv => {
+      const participants = conversationParticipants.filter(p => p.conversationId === conv.id);
+      return Array.from({ length: faker.number.int({ min: 3, max: 10 }) }).map(() => ({
+        conversationId: conv.id,
+        senderId: faker.helpers.arrayElement(participants).userId,
+        content: faker.lorem.paragraph(),
+        isRead: faker.datatype.boolean(),
+        readAt: faker.date.past(),
+        metadata: {},
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }));
+    });
 
-    // Create message attachments
-    await MessageAttachment.bulkCreate([
-      {
-        messageId: messages[0].id,
-        type: 'image',
-        url: 'https://example.com/image1.jpg',
-        filename: 'image1.jpg',
-        size: 1024,
-        mimeType: 'image/jpeg'
-      }
-    ]);
+    const createdMessages = await db.Message.bulkCreate(messages);
 
-    console.log('✅ Communication models seeded successfully');
+    // Seed MessageAttachments
+    const messageAttachments = createdMessages
+      .filter(() => faker.datatype.boolean()) // Only some messages have attachments
+      .map(message => {
+        const isImage = faker.datatype.boolean();
+        const fileType = isImage 
+          ? faker.helpers.arrayElement(['image/jpeg', 'image/png', 'image/gif'])
+          : faker.helpers.arrayElement(['application/pdf', 'application/msword']);
+        
+        return {
+          messageId: message.id,
+          fileName: `file_${faker.string.alphanumeric(8)}.${fileType.split('/')[1]}`,
+          fileType,
+          fileSize: faker.number.int({ min: 1000, max: 10000000 }),
+          filePath: faker.system.filePath(),
+          thumbnailPath: isImage ? faker.system.filePath() : null,
+          width: isImage ? faker.number.int({ min: 100, max: 2000 }) : null,
+          height: isImage ? faker.number.int({ min: 100, max: 2000 }) : null,
+          duration: null,
+          metadata: {},
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        };
+      });
+
+    await db.MessageAttachment.bulkCreate(messageAttachments);
+
+    // Seed Notifications
+    const notifications = Array.from({ length: 20 }).map(() => ({
+      userId: faker.helpers.arrayElement(users).id,
+      type: faker.helpers.arrayElement(['info', 'success', 'warning', 'error']),
+      category: faker.helpers.arrayElement(['booking', 'payment', 'review', 'message', 'system']),
+      title: faker.lorem.sentence(),
+      message: faker.lorem.paragraph(),
+      isRead: faker.datatype.boolean(),
+      readAt: faker.date.past(),
+      metadata: {},
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }));
+
+    await db.Notification.bulkCreate(notifications);
+
+    console.log('Communication models seeded successfully');
   } catch (error) {
-    console.error('❌ Error seeding communication models:', error);
+    console.error('Error seeding communication models:', error);
     throw error;
   }
 }
-
-module.exports = seedCommunication;
+// seedCommunicationModels()
+module.exports = seedCommunicationModels;

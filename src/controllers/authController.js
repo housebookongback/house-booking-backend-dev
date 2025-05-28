@@ -383,7 +383,7 @@ const handleGoogleCallback = async (req, res) => {
 const googleAuth = async (req, res) => {
     try {
         const { token } = req.body;
-        
+
         const ticket = await oauth2Client.verifyIdToken({
             idToken: token,
             audience: process.env.GOOGLE_CLIENT_ID
@@ -578,4 +578,97 @@ module.exports = {
  */
 
 
-// Add to module exports
+// Add Facebook authentication
+/**
+ * Handle Facebook OAuth authentication
+ * @route POST /api/auth/facebook
+ */
+const facebookAuth = async (req, res) => {
+    try {
+        const { accessToken } = req.body;
+        // Verify the access token with Facebook using your app credentials
+        const appAccessTokenResponse = await fetch(
+            `https://graph.facebook.com/oauth/access_token?client_id=${process.env.FACEBOOK_APP_ID}&client_secret=${process.env.FACEBOOK_APP_SECRET}&grant_type=client_credentials`
+        );
+        const appAccessTokenData = await appAccessTokenResponse.json();
+        // Verify the user access token
+        const verifyTokenResponse = await fetch(
+            `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${appAccessTokenData.access_token}`
+        );
+        const verifyTokenData = await verifyTokenResponse.json();
+
+        if (!verifyTokenData.data.is_valid) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid Facebook access token'
+            });
+        }
+
+        // Get user data from Facebook
+        const response = await fetch(
+            `https://graph.facebook.com/me?fields=id,name,email,picture&access_token=${accessToken}`
+        );
+        const data = await response.json();
+
+        if (!data.email) {
+            return res.status(400).json({
+                success: false,
+                message: 'Email not provided by Facebook'
+            });
+        }
+
+        // Check if user exists
+        let user = await db.User.findOne({ where: { email: data.email } });
+
+        if (!user) {
+            // Create new user if doesn't exist
+            user = await db.User.create({
+                name: data.name,
+                email: data.email,
+                isVerified: true,
+                emailVerifiedAt: new Date(),
+                status: 'active',
+                facebookId: data.id,
+                picture: data.picture?.data?.url
+            });
+        } else if (!user.facebookId) {
+            // Link Facebook account to existing user
+            await user.update({
+                facebookId: data.id,
+                picture: data.picture?.data?.url || user.picture
+            });
+        }
+
+        // Generate JWT token
+        const token = generateToken({
+            id: user.id,
+            email: user.email,
+            role: user.role
+        });
+
+        res.json({
+            success: true,
+            data: {
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    isVerified: user.isVerified,
+                    role: user.role
+                },
+                token
+            }
+        });
+
+    } catch (error) {
+        console.error('Facebook authentication error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to authenticate with Facebook',
+            error: error.message
+        });
+    }
+};
+
+// Update module exports
+

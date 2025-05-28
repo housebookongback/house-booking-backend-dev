@@ -1,5 +1,4 @@
 const { faker } = require('@faker-js/faker');
-const { SearchFilter, SearchHistory, ViewCount, ClickCount } = require('../models');
 const db = require('../models');
 
 async function seedSearchModels() {
@@ -57,28 +56,6 @@ async function seedSearchModels() {
     }));
 
     await db.SearchHistory.bulkCreate(searchHistory);
-
-    // Create view counts
-    await ViewCount.bulkCreate([
-      {
-        listingId: 1, // Assuming first listing ID is 1
-        userId: faker.helpers.arrayElement(users).id,
-        viewDate: new Date(),
-        source: 'search_results',
-        deviceType: 'desktop'
-      }
-    ]);
-
-    // Create click counts
-    await ClickCount.bulkCreate([
-      {
-        listingId: 1,
-        userId: faker.helpers.arrayElement(users).id,
-        clickDate: new Date(),
-        source: 'search_results',
-        action: 'view_details'
-      }
-    ]);
 
     console.log('Search models seeded successfully');
   } catch (error) {

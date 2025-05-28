@@ -29,7 +29,7 @@ module.exports = {
           allowNull: true
         },
         icon: {
-          type: Sequelize.STRING,
+          type: Sequelize.TEXT,
           allowNull: true
         },
         isActive: {
