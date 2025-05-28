@@ -1082,6 +1082,280 @@ const adminController = {
         }
     },
 
+    // List all bookings for admin
+    listBookings: async (req, res) => {
+        try {
+            const { status, page = 1, limit = 10, listingId, guestId } = req.query;
+            const offset = (page - 1) * limit;
+            
+            // Build where clause
+            const where = {};
+            if (status) where.status = status;
+            if (listingId) where.listingId = listingId;
+            if (guestId) where.guestId = guestId;
+            
+            const bookings = await Booking.findAndCountAll({
+                where,
+                include: [
+                    {
+                        model: User,
+                        as: 'guest',
+                        attributes: ['id', 'name', 'email']
+                    },
+                    {
+                        model: Listing,
+                        as: 'listing',
+                        attributes: ['id', 'title']
+                    }
+                ],
+                order: [['createdAt', 'DESC']],
+                limit: parseInt(limit),
+                offset: parseInt(offset)
+            });
+            
+            // Format response with proper totalPrice values
+            const formattedBookings = bookings.rows.map(booking => {
+                const bookingData = booking.toJSON();
+                
+                // Ensure totalPrice is a valid number
+                if (bookingData.totalPrice !== undefined) {
+                    // If it's a string, convert it to a number
+                    if (typeof bookingData.totalPrice === 'string') {
+                        bookingData.totalPrice = parseFloat(bookingData.totalPrice);
+                    }
+                    
+                    // If it's NaN, set it to 0
+                    if (isNaN(bookingData.totalPrice)) {
+                        bookingData.totalPrice = 0;
+                    }
+                } else {
+                    bookingData.totalPrice = 0;
+                }
+                
+                return bookingData;
+            });
+            
+            res.json({
+                data: formattedBookings,
+                total: bookings.count,
+                page: parseInt(page),
+                totalPages: Math.ceil(bookings.count / parseInt(limit))
+            });
+        } catch (error) {
+            console.error('Error fetching bookings:', error);
+            res.status(500).json({ message: 'Error fetching bookings', error: error.message });
+        }
+    },
+    
+    // Get booking details
+    getBookingDetails: async (req, res) => {
+        try {
+            console.log(`Fetching booking details for ID: ${req.params.id}`);
+            const bookingId = req.params.id;
+            
+            // First try to find with raw query to check if booking exists at all
+            const bookingExists = await sequelize.query(
+                `SELECT EXISTS(SELECT 1 FROM "Bookings" WHERE id = :bookingId)`,
+                {
+                    replacements: { bookingId },
+                    type: sequelize.QueryTypes.SELECT,
+                    plain: true
+                }
+            );
+            
+            const exists = bookingExists ? bookingExists.exists : false;
+            if (!exists) {
+                console.log(`Booking with ID ${bookingId} does not exist in database`);
+                return res.status(404).json({ 
+                    message: 'Booking not found',
+                    details: `No booking exists with ID ${bookingId}`,
+                    code: 'BOOKING_NOT_FOUND'
+                });
+            }
+            
+            // Try to get booking data directly with SQL as a fallback
+            const rawBookingData = await sequelize.query(
+                `SELECT * FROM "Bookings" WHERE id = :bookingId`,
+                {
+                    replacements: { bookingId },
+                    type: sequelize.QueryTypes.SELECT,
+                    plain: true
+                }
+            );
+            
+            console.log(`Raw booking data for ID ${bookingId}:`, rawBookingData ? 'Found' : 'Not found');
+            
+            // Try to load the full booking with associations
+            let booking = null;
+            try {
+                booking = await Booking.findByPk(bookingId, {
+                    include: [
+                        {
+                            model: User,
+                            as: 'guest',
+                            attributes: ['id', 'name', 'email', 'phone']
+                        },
+                        {
+                            model: User,
+                            as: 'host',
+                            attributes: ['id', 'name', 'email', 'phone']
+                        },
+                        {
+                            model: Listing,
+                            as: 'listing',
+                            attributes: ['id', 'title', 'pricePerNight']
+                        },
+                        {
+                            model: Payment,
+                            as: 'payments'
+                        }
+                    ]
+                });
+            } catch (associationError) {
+                console.error(`Error loading booking with associations: ${associationError.message}`);
+            }
+            
+            // If booking with associations couldn't be loaded, use raw data as fallback
+            if (!booking && rawBookingData) {
+                console.log(`Using raw data fallback for booking ID ${bookingId}`);
+                
+                // Get minimal guest and host data
+                let guestData = null;
+                let hostData = null;
+                let listingData = null;
+                
+                try {
+                    if (rawBookingData.guestId) {
+                        const guestResult = await sequelize.query(
+                            `SELECT id, name, email, phone FROM "Users" WHERE id = :userId`,
+                            {
+                                replacements: { userId: rawBookingData.guestId },
+                                type: sequelize.QueryTypes.SELECT,
+                                plain: true
+                            }
+                        );
+                        guestData = guestResult;
+                    }
+                    
+                    if (rawBookingData.hostId) {
+                        const hostResult = await sequelize.query(
+                            `SELECT id, name, email, phone FROM "Users" WHERE id = :userId`,
+                            {
+                                replacements: { userId: rawBookingData.hostId },
+                                type: sequelize.QueryTypes.SELECT,
+                                plain: true
+                            }
+                        );
+                        hostData = hostResult;
+                    }
+                    
+                    if (rawBookingData.listingId) {
+                        const listingResult = await sequelize.query(
+                            `SELECT id, title, "pricePerNight" FROM "Listings" WHERE id = :listingId`,
+                            {
+                                replacements: { listingId: rawBookingData.listingId },
+                                type: sequelize.QueryTypes.SELECT,
+                                plain: true
+                            }
+                        );
+                        listingData = listingResult;
+                    }
+                } catch (fallbackError) {
+                    console.error(`Error loading fallback data: ${fallbackError.message}`);
+                }
+                
+                // Create a booking-like object
+                const fallbackBooking = {
+                    ...rawBookingData,
+                    guest: guestData,
+                    host: hostData,
+                    listing: listingData,
+                    payments: []
+                };
+                
+                // Process this as our booking
+                booking = fallbackBooking;
+            }
+            
+            if (!booking) {
+                console.log(`Booking with ID ${bookingId} not found with associations`);
+                return res.status(404).json({ 
+                    message: 'Booking not found',
+                    details: 'The booking exists but could not be loaded with its associations',
+                    code: 'BOOKING_LOAD_FAILED'
+                });
+            }
+            
+            // Process the booking to ensure totalPrice is a number
+            const bookingData = booking.toJSON ? booking.toJSON() : booking;
+            if (bookingData.totalPrice !== undefined) {
+                // If it's a string, convert it to a number
+                if (typeof bookingData.totalPrice === 'string') {
+                    bookingData.totalPrice = parseFloat(bookingData.totalPrice);
+                }
+                // If it's NaN, set it to 0
+                if (isNaN(bookingData.totalPrice)) {
+                    bookingData.totalPrice = 0;
+                }
+            }
+            
+            console.log(`Successfully prepared booking data for ID ${bookingId}`);
+            res.json(bookingData);
+        } catch (error) {
+            console.error('Error fetching booking details:', error);
+            res.status(500).json({ 
+                message: 'Error fetching booking details', 
+                error: error.message,
+                stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            });
+        }
+    },
+    
+    // Update booking status by admin
+    updateBookingStatus: async (req, res) => {
+        try {
+            const bookingId = req.params.id;
+            const { status, reason } = req.body;
+            
+            // Validate status
+            const validStatuses = ['pending', 'confirmed', 'cancelled', 'completed'];
+            if (!validStatuses.includes(status)) {
+                return res.status(400).json({ 
+                    message: 'Invalid status value', 
+                    validValues: validStatuses 
+                });
+            }
+            
+            // Find the booking
+            const booking = await Booking.findByPk(bookingId);
+            
+            if (!booking) {
+                return res.status(404).json({ message: 'Booking not found' });
+            }
+            
+            // Update booking status
+            await booking.update({
+                status,
+                statusReason: reason,
+                statusUpdatedAt: new Date(),
+                statusUpdatedBy: req.admin.id
+            });
+            
+            res.json({ 
+                message: `Booking status updated to ${status}`, 
+                booking: { 
+                    id: booking.id, 
+                    status: booking.status,
+                    statusReason: booking.statusReason,
+                    statusUpdatedAt: booking.statusUpdatedAt
+                } 
+            });
+        } catch (error) {
+            console.error('Error updating booking status:', error);
+            res.status(500).json({ message: 'Error updating booking status', error: error.message });
+        }
+    },
+    
     // Get dashboard stats
     getDashboardStats: async (req, res) => {
         try {

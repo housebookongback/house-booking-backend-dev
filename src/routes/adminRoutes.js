@@ -17,7 +17,7 @@ router.post('/host-verifications/:id/reject', authenticate, verifyAdmin, adminCo
 // Host management routes
 router.get('/hosts', authenticate, verifyAdmin, adminController.listHosts);
 router.get('/hosts/:id', authenticate, verifyAdmin, adminController.getHostDetails);
-router.put('/hosts/:id/verification-status', authenticate, verifyAdmin, adminController.updateHostVerificationStatus);
+router.patch('/hosts/:id/verification-status', authenticate, verifyAdmin, adminController.updateHostVerificationStatus);
 
 // User management routes
 router.get('/users', authenticate, verifyAdmin, adminController.listUsers);
@@ -30,7 +30,12 @@ router.post('/users/bulk-unban', authenticate, verifyAdmin, adminController.bulk
 // Property management routes
 router.get('/listings', authenticate, verifyAdmin, adminController.listAllProperties);
 router.get('/listings/:id', authenticate, verifyAdmin, adminController.getPropertyDetails);
-router.put('/listings/:id/status', authenticate, verifyAdmin, adminController.updatePropertyStatus);
+router.patch('/listings/:id/status', authenticate, verifyAdmin, adminController.updatePropertyStatus);
 router.delete('/listings/:id', authenticate, verifyAdmin, adminController.deleteProperty);
+
+// Booking management routes
+router.get('/bookings', authenticate, verifyAdmin, adminController.listBookings);
+router.get('/bookings/:id', authenticate, verifyAdmin, adminController.getBookingDetails);
+router.patch('/bookings/:id/status', authenticate, verifyAdmin, adminController.updateBookingStatus);
 
 module.exports = router; 
