@@ -52,7 +52,7 @@ const resetPasswordSchema = {
 
 // Routes
 router.post('/register', validateRequest(registerSchema), authController.register);
-router.post('/login', validateRequest(loginSchema), authController.login);
+router.post('/home', validateRequest(loginSchema), authController.login);
 router.get('/verify/:token', authController.verifyEmail);
 router.post('/forgot-password', validateRequest(forgotPasswordSchema), authController.forgotPassword);
 router.post('/reset-password', validateRequest(resetPasswordSchema), authController.resetPassword);

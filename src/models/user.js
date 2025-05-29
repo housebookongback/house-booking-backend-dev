@@ -124,7 +124,26 @@ module.exports = (sequelize, DataTypes) => {
         status: { 
             type: DataTypes.STRING, 
             allowNull: false,
-            defaultValue: 'active' 
+            defaultValue: 'active',
+            validate: {
+                isIn: [['active', 'pending', 'banned']]
+            }
+        },
+        banReason: {
+            type: DataTypes.TEXT,
+            allowNull: true
+        },
+        bannedBy: {
+            type: DataTypes.INTEGER,
+            allowNull: true,
+            references: {
+                model: 'Users',
+                key: 'id'
+            }
+        },
+        bannedAt: {
+            type: DataTypes.DATE,
+            allowNull: true
         }
     }, {
         tableName: 'Users',
