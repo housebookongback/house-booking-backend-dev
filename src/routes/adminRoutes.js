@@ -45,6 +45,13 @@ router.get('/reviews/:id', authenticate, verifyAdmin, adminController.getReviewD
 router.patch('/reviews/:id/visibility', authenticate, verifyAdmin, adminController.updateReviewVisibility);
 router.delete('/reviews/:id', authenticate, verifyAdmin, adminController.deleteReview);
 
+// Payment management routes - reordered to put specific routes first
+// The specific /payments/summary route must come before the general /payments/:id route
+router.get('/payments/summary', authenticate, verifyAdmin, adminController.getPaymentSummary);
+router.get('/payments', authenticate, verifyAdmin, adminController.listPayments);
+router.get('/payments/:id', authenticate, verifyAdmin, adminController.getPaymentDetails);
+router.post('/payments/:id/refund', authenticate, verifyAdmin, adminController.refundPayment);
+
 // Property types route
 router.get('/property-types', authenticate, verifyAdmin, reviewController.getPropertyTypes);
 

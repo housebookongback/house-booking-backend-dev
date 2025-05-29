@@ -1695,6 +1695,629 @@ const adminController = {
                 error: 'Failed to delete review'
             });
         }
+    },
+
+    // List all payments with pagination and filtering
+    listPayments: async (req, res) => {
+        try {
+            const { Op } = require('sequelize');
+            const { 
+                page = 1, 
+                limit = 10,
+                status,
+                paymentMethod,
+                startDate,
+                endDate,
+                search
+            } = req.query;
+
+            console.log('Payment list query params:', req.query);
+            const offset = (parseInt(page) - 1) * parseInt(limit);
+            
+            // Build the where clause based on filters
+            const whereClause = {};
+            
+            if (status && status !== 'all') {
+                whereClause.status = status;
+            }
+            
+            if (paymentMethod && paymentMethod !== 'all') {
+                whereClause.paymentMethod = paymentMethod;
+            }
+            
+            // Date range filter
+            if (startDate || endDate) {
+                whereClause.createdAt = {};
+                
+                if (startDate) {
+                    whereClause.createdAt[Op.gte] = new Date(startDate);
+                }
+                
+                if (endDate) {
+                    const endDateObj = new Date(endDate);
+                    endDateObj.setDate(endDateObj.getDate() + 1); // Include the entire end date
+                    whereClause.createdAt[Op.lt] = endDateObj;
+                }
+            }
+            
+            console.log('Payment search where clause:', JSON.stringify(whereClause));
+            
+            // Get total count for pagination with a simple query to avoid eager loading issues
+            const totalPayments = await Payment.count({
+                where: whereClause,
+            });
+            
+            console.log(`Total payments matching criteria: ${totalPayments}`);
+            
+            // Simplified query with direct joins, making sure not to reference non-existent columns
+            const payments = await sequelize.query(
+                `SELECT 
+                   p.id, p.amount, p.currency, p.status, p."paymentMethod", 
+                   p."idempotencyKey", p."processedAt", p."completedAt", p."refundedAt", 
+                   p."failureReason", p."createdAt", p."updatedAt", p."paymentDetails",
+                   b.id as "bookingId", b."listingId", b."guestId", b."hostId",
+                   g.name as "guestName", g.email as "guestEmail",
+                   l.title as "listingTitle"
+                 FROM "Payments" p
+                 LEFT JOIN "Bookings" b ON p."bookingId" = b.id
+                 LEFT JOIN "Users" g ON b."guestId" = g.id
+                 LEFT JOIN "Listings" l ON b."listingId" = l.id
+                 WHERE ${Object.keys(whereClause).length > 0 
+                    ? Object.entries(whereClause).map(([key, value]) => {
+                        if (key === 'createdAt') {
+                            let dateConditions = [];
+                            if (value[Op.gte]) {
+                                dateConditions.push(`p."createdAt" >= '${value[Op.gte].toISOString()}'`);
+                            }
+                            if (value[Op.lt]) {
+                                dateConditions.push(`p."createdAt" < '${value[Op.lt].toISOString()}'`);
+                            }
+                            return dateConditions.join(' AND ');
+                        } else {
+                            return `p."${key}" = '${value}'`;
+                        }
+                      }).join(' AND ')
+                    : '1=1'}
+                 ORDER BY p."createdAt" DESC
+                 LIMIT ${parseInt(limit)} OFFSET ${offset}`,
+                { 
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            console.log(`Found ${payments.length} payments`);
+            
+            // Get host information in a separate query for all hosts in the results
+            const hostIds = payments
+                .map(payment => payment.hostId)
+                .filter(id => id);
+            
+            const hosts = hostIds.length > 0 ? await User.findAll({
+                where: { id: hostIds },
+                attributes: ['id', 'name', 'email']
+            }) : [];
+            
+            // Create a map for easy lookup
+            const hostMap = {};
+            hosts.forEach(host => {
+                hostMap[host.id] = {
+                    id: host.id,
+                    name: host.name || 'Unknown Host',
+                    email: host.email
+                };
+            });
+            
+            // Format payments for response
+            const formattedPayments = payments.map(payment => {
+                // Calculate fees
+                const amount = parseFloat(payment.amount) || 0;
+                const platformFee = amount * 0.15; // 15% platform fee
+                const hostPayout = amount - platformFee;
+                
+                // Get host info from map
+                const hostId = payment.hostId;
+                const host = hostId ? hostMap[hostId] : null;
+                
+                // Payment details for card info
+                let cardInfo;
+                try {
+                    const paymentDetails = payment.paymentDetails 
+                        ? (typeof payment.paymentDetails === 'string' 
+                            ? JSON.parse(payment.paymentDetails) 
+                            : payment.paymentDetails)
+                        : null;
+                        
+                    if (payment.paymentMethod === 'credit_card' && paymentDetails?.cardInfo) {
+                        cardInfo = {
+                            cardType: paymentDetails.cardInfo.brand || 'Credit Card',
+                            last4: paymentDetails.cardInfo.last4 || '****'
+                        };
+                    }
+                } catch (e) {
+                    console.error('Error parsing payment details:', e);
+                    cardInfo = undefined;
+                }
+                
+                return {
+                    id: payment.id.toString(),
+                    bookingId: payment.bookingId ? payment.bookingId.toString() : 'unknown',
+                    propertyId: payment.listingId ? payment.listingId.toString() : 'unknown',
+                    propertyName: payment.listingTitle || 'Unknown Property',
+                    userId: payment.guestId ? payment.guestId.toString() : 'unknown',
+                    userName: payment.guestName || 'Unknown User',
+                    hostId: hostId ? hostId.toString() : null,
+                    hostName: host ? host.name : 'Unknown Host',
+                    amount: amount,
+                    currency: payment.currency || 'USD',
+                    platformFee: parseFloat(platformFee.toFixed(2)),
+                    hostPayout: parseFloat(hostPayout.toFixed(2)),
+                    status: payment.status || 'unknown',
+                    paymentMethod: payment.paymentMethod || 'unknown',
+                    transactionId: payment.idempotencyKey || payment.id.toString(),
+                    dateProcessed: payment.processedAt || payment.createdAt,
+                    refundAmount: payment.status === 'refunded' ? amount : undefined,
+                    refundReason: payment.status === 'refunded' ? 'Refunded by admin' : undefined,
+                    refundDate: payment.refundedAt,
+                    cardInfo: cardInfo
+                };
+            });
+            
+            res.json({
+                success: true,
+                data: formattedPayments,
+                pagination: {
+                    total: totalPayments,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    pages: Math.ceil(totalPayments / parseInt(limit))
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching payments:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch payments',
+                details: error.message
+            });
+        }
+    },
+    
+    // Get payment details
+    getPaymentDetails: async (req, res) => {
+        try {
+            const { id } = req.params;
+            console.log(`Fetching details for payment ID: ${id}`);
+            
+            // First check if payment exists with a simple query
+            const paymentExists = await sequelize.query(
+                `SELECT EXISTS(SELECT 1 FROM "Payments" WHERE id = :id)`,
+                {
+                    replacements: { id },
+                    type: sequelize.QueryTypes.SELECT,
+                    plain: true
+                }
+            );
+            
+            if (!paymentExists.exists) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Payment not found'
+                });
+            }
+            
+            // Get payment with its related booking, guest, listing info
+            // Removed reference to non-existent guestCount column
+            const paymentData = await sequelize.query(
+                `SELECT 
+                    p.id, p.amount, p.currency, p.status, p."paymentMethod", 
+                    p."idempotencyKey", p."processedAt", p."completedAt", p."refundedAt", 
+                    p."failureReason", p."createdAt", p."updatedAt", p."paymentDetails", p.metadata,
+                    b.id as "bookingId", b."listingId", b."guestId", b."hostId", 
+                    b."checkIn", b."checkOut", b.status as "bookingStatus", b."createdAt" as "bookingCreatedAt",
+                    g.id as "guestId", g.name as "guestName", g.email as "guestEmail", g."profilePicture" as "guestProfilePicture",
+                    l.id as "listingId", l.title as "listingTitle"
+                FROM "Payments" p
+                LEFT JOIN "Bookings" b ON p."bookingId" = b.id
+                LEFT JOIN "Users" g ON b."guestId" = g.id
+                LEFT JOIN "Listings" l ON b."listingId" = l.id
+                WHERE p.id = :id`,
+                {
+                    replacements: { id },
+                    type: sequelize.QueryTypes.SELECT,
+                    plain: true
+                }
+            );
+            
+            if (!paymentData) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Payment details could not be retrieved'
+                });
+            }
+            
+            // Get host information separately
+            let host = null;
+            if (paymentData.hostId) {
+                host = await User.findByPk(paymentData.hostId, {
+                    attributes: ['id', 'name', 'email', 'profilePicture']
+                });
+            }
+            
+            // Calculate fees
+            const amount = parseFloat(paymentData.amount) || 0;
+            const platformFee = amount * 0.15; // 15% platform fee
+            const hostPayout = amount - platformFee;
+            
+            // Parse payment details for card info
+            let paymentDetails = null;
+            try {
+                if (paymentData.paymentDetails) {
+                    if (typeof paymentData.paymentDetails === 'string') {
+                        paymentDetails = JSON.parse(paymentData.paymentDetails);
+                    } else {
+                        paymentDetails = paymentData.paymentDetails;
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing payment details:', e);
+            }
+            
+            // Parse metadata
+            let metadata = null;
+            try {
+                if (paymentData.metadata) {
+                    if (typeof paymentData.metadata === 'string') {
+                        metadata = JSON.parse(paymentData.metadata);
+                    } else {
+                        metadata = paymentData.metadata;
+                    }
+                }
+            } catch (e) {
+                console.error('Error parsing payment metadata:', e);
+            }
+            
+            // Use a default guest count for the booking details
+            const defaultGuestCount = 1;
+            
+            // Format the response
+            const formattedPayment = {
+                id: paymentData.id.toString(),
+                bookingId: paymentData.bookingId ? paymentData.bookingId.toString() : 'unknown',
+                propertyId: paymentData.listingId ? paymentData.listingId.toString() : 'unknown',
+                propertyName: paymentData.listingTitle || 'Unknown Property',
+                userId: paymentData.guestId ? paymentData.guestId.toString() : 'unknown',
+                userName: paymentData.guestName || 'Unknown User',
+                userEmail: paymentData.guestEmail || 'Unknown',
+                userProfilePicture: paymentData.guestProfilePicture,
+                hostId: host ? host.id.toString() : null,
+                hostName: host ? host.name : 'Unknown Host',
+                hostEmail: host ? host.email : null,
+                hostProfilePicture: host ? host.profilePicture : null,
+                amount: amount,
+                currency: paymentData.currency || 'USD',
+                platformFee: parseFloat(platformFee.toFixed(2)),
+                hostPayout: parseFloat(hostPayout.toFixed(2)),
+                status: paymentData.status || 'unknown',
+                paymentMethod: paymentData.paymentMethod || 'unknown',
+                paymentDetails: paymentDetails,
+                transactionId: paymentData.idempotencyKey || paymentData.id.toString(),
+                dateProcessed: paymentData.processedAt,
+                dateCompleted: paymentData.completedAt,
+                refundAmount: paymentData.status === 'refunded' ? amount : undefined,
+                refundReason: paymentData.status === 'refunded' && metadata?.refundReason ? 
+                    metadata.refundReason : 'No reason provided',
+                refundDate: paymentData.refundedAt,
+                failureReason: paymentData.failureReason,
+                bookingDetails: paymentData.bookingId ? {
+                    checkIn: paymentData.checkIn,
+                    checkOut: paymentData.checkOut,
+                    guestCount: defaultGuestCount, // Using default value since column doesn't exist
+                    status: paymentData.bookingStatus,
+                    createdAt: paymentData.bookingCreatedAt
+                } : null,
+                createdAt: paymentData.createdAt,
+                updatedAt: paymentData.updatedAt
+            };
+            
+            console.log(`Successfully formatted payment details for ID ${id}`);
+            
+            res.json({
+                success: true,
+                data: formattedPayment
+            });
+        } catch (error) {
+            console.error('Error fetching payment details:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch payment details',
+                details: error.message
+            });
+        }
+    },
+    
+    // Refund a payment
+    refundPayment: async (req, res) => {
+        try {
+            const db = require('../models');
+            const { id } = req.params;
+            const { reason } = req.body;
+            
+            const payment = await db.Payment.findByPk(id, {
+                include: [
+                    {
+                        model: db.Booking,
+                        as: 'booking'
+                    }
+                ]
+            });
+            
+            if (!payment) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Payment not found'
+                });
+            }
+            
+            if (payment.status !== 'completed') {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Only completed payments can be refunded'
+                });
+            }
+            
+            // Process refund - in a real system, this would call a payment processor API
+            await payment.update({
+                status: 'refunded',
+                refundedAt: new Date(),
+                metadata: {
+                    ...payment.metadata,
+                    refundReason: reason || 'Administrative refund',
+                    refundedBy: req.admin.id
+                }
+            });
+            
+            // Update booking status if needed
+            if (payment.booking) {
+                await payment.booking.update({
+                    status: 'cancelled',
+                    cancelledAt: new Date(),
+                    cancellationReason: 'Payment refunded: ' + (reason || 'Administrative refund')
+                });
+            }
+            
+            res.json({
+                success: true,
+                message: 'Payment refunded successfully',
+                data: {
+                    id: payment.id,
+                    status: 'refunded',
+                    refundedAt: payment.refundedAt
+                }
+            });
+        } catch (error) {
+            console.error('Error refunding payment:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to refund payment'
+            });
+        }
+    },
+    
+    // Get payment summary statistics
+    getPaymentSummary: async (req, res) => {
+        try {
+            const { Op } = require('sequelize');
+            const { 
+                startDate,
+                endDate,
+                period = 'all' // all, day, week, month
+            } = req.query;
+            
+            console.log('Generating payment summary with params:', req.query);
+            
+            // Build date filter for SQL
+            let dateFilter = '1=1'; // Default - no filter
+            let dateParams = {};
+            
+            if (startDate || endDate) {
+                const conditions = [];
+                
+                if (startDate) {
+                    conditions.push(`"createdAt" >= :startDate`);
+                    dateParams.startDate = new Date(startDate);
+                }
+                
+                if (endDate) {
+                    // Include the entire end date by going to the next day
+                    const endDateObj = new Date(endDate);
+                    endDateObj.setDate(endDateObj.getDate() + 1);
+                    conditions.push(`"createdAt" < :endDate`);
+                    dateParams.endDate = endDateObj;
+                }
+                
+                dateFilter = conditions.join(' AND ');
+            } else if (period !== 'all') {
+                const now = new Date();
+                let periodStartDate;
+                
+                switch (period) {
+                    case 'day':
+                        periodStartDate = new Date(now);
+                        periodStartDate.setDate(periodStartDate.getDate() - 1);
+                        break;
+                    case 'week':
+                        periodStartDate = new Date(now);
+                        periodStartDate.setDate(periodStartDate.getDate() - 7);
+                        break;
+                    case 'month':
+                        periodStartDate = new Date(now);
+                        periodStartDate.setMonth(periodStartDate.getMonth() - 1);
+                        break;
+                    default:
+                        periodStartDate = null;
+                }
+                
+                if (periodStartDate) {
+                    dateFilter = `"createdAt" >= :periodStartDate`;
+                    dateParams.periodStartDate = periodStartDate;
+                }
+            }
+            
+            console.log('Payment summary date filter:', dateFilter);
+            
+            // Execute SQL queries for summary statistics
+            
+            // Get status counts and amounts
+            const statusStats = await sequelize.query(
+                `SELECT 
+                    status, 
+                    COUNT(*) as count, 
+                    COALESCE(SUM(CAST(amount AS DECIMAL(10,2))), 0) as total
+                 FROM "Payments" 
+                 WHERE ${dateFilter}
+                 GROUP BY status`,
+                {
+                    replacements: dateParams,
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            console.log(`Found ${statusStats.length} different payment statuses`);
+            
+            // Get payment method breakdown
+            const methodStats = await sequelize.query(
+                `SELECT 
+                    "paymentMethod", 
+                    COUNT(*) as count
+                 FROM "Payments"
+                 WHERE ${dateFilter}
+                 GROUP BY "paymentMethod"`,
+                {
+                    replacements: dateParams,
+                    type: sequelize.QueryTypes.SELECT
+                }
+            );
+            
+            // Initialize totals
+            let totalTransactions = 0;
+            let totalIncome = 0;
+            let totalExpenses = 0;
+            let pendingAmount = 0;
+            let pendingCount = 0;
+            let completedCount = 0;
+            let failedCount = 0;
+            let refundedCount = 0;
+            
+            // Process status statistics
+            statusStats.forEach(stat => {
+                const status = stat.status;
+                const count = parseInt(stat.count || 0);
+                const amount = parseFloat(stat.total || 0);
+                
+                totalTransactions += count;
+                
+                switch (status) {
+                    case 'completed':
+                        totalIncome += amount;
+                        completedCount = count;
+                        break;
+                    case 'refunded':
+                        totalExpenses += amount;
+                        refundedCount = count;
+                        break;
+                    case 'pending':
+                    case 'processing':
+                        pendingAmount += amount;
+                        pendingCount += (status === 'pending' ? count : 0);
+                        break;
+                    case 'failed':
+                        failedCount = count;
+                        break;
+                }
+            });
+            
+            // Process payment methods
+            const paymentMethods = {
+                credit_card: 0,
+                paypal: 0,
+                bank_transfer: 0,
+                stripe: 0
+            };
+            
+            methodStats.forEach(stat => {
+                const method = stat.paymentMethod;
+                const count = parseInt(stat.count || 0);
+                
+                if (method && paymentMethods.hasOwnProperty(method)) {
+                    paymentMethods[method] = count;
+                }
+            });
+            
+            // Calculate previous period statistics for comparison
+            let previousTotalIncome = 0;
+            let incomeChange = 0;
+            
+            if (startDate && endDate) {
+                // Calculate the duration of the current period
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                const durationMs = end.getTime() - start.getTime();
+                
+                // Calculate previous period dates
+                const prevEnd = new Date(start);
+                const prevStart = new Date(prevEnd);
+                prevStart.setTime(prevEnd.getTime() - durationMs);
+                
+                const prevIncomeResult = await sequelize.query(
+                    `SELECT COALESCE(SUM(CAST(amount AS DECIMAL(10,2))), 0) as total
+                     FROM "Payments"
+                     WHERE status = 'completed'
+                     AND "createdAt" >= :prevStart
+                     AND "createdAt" < :prevEnd`,
+                    {
+                        replacements: {
+                            prevStart,
+                            prevEnd: start // Previous period ends when current starts
+                        },
+                        type: sequelize.QueryTypes.SELECT,
+                        plain: true
+                    }
+                );
+                
+                previousTotalIncome = parseFloat(prevIncomeResult.total || 0);
+                
+                // Calculate change percentage
+                if (previousTotalIncome > 0) {
+                    incomeChange = ((totalIncome - previousTotalIncome) / previousTotalIncome) * 100;
+                }
+            }
+            
+            console.log('Payment summary calculated successfully');
+            
+            res.json({
+                success: true,
+                data: {
+                    totalTransactions,
+                    totalIncome,
+                    totalExpenses,
+                    pendingAmount,
+                    pendingCount,
+                    completedCount,
+                    failedCount,
+                    refundedCount,
+                    netAmount: totalIncome - totalExpenses,
+                    incomeChange: parseFloat(incomeChange.toFixed(1)),
+                    paymentMethods
+                }
+            });
+        } catch (error) {
+            console.error('Error generating payment summary:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to generate payment summary',
+                details: error.message
+            });
+        }
     }
 };
 
