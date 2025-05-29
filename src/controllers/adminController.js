@@ -1395,26 +1395,76 @@ const adminController = {
                 ]
             });
             
-            // Get recent users
-            const recentUsers = await User.findAll({
-                limit: 5,
-                order: [['createdAt', 'DESC']],
-                attributes: { exclude: ['passwordHash', 'passwordResetToken', 'passwordResetExpires', 'emailVerificationToken'] }
-            });
+            // Get revenue by month for the past 12 months
+            const revenueByMonthData = await sequelize.query(`
+                SELECT 
+                    TO_CHAR(DATE_TRUNC('month', "createdAt"), 'Mon') as month,
+                    SUM(amount) as revenue
+                FROM "Payments"
+                WHERE 
+                    status = 'completed' AND
+                    "createdAt" >= NOW() - INTERVAL '12 months'
+                GROUP BY DATE_TRUNC('month', "createdAt")
+                ORDER BY DATE_TRUNC('month', "createdAt")
+            `, { type: sequelize.QueryTypes.SELECT });
             
-            // Format response
+            // Get bookings by month for the past 12 months
+            const bookingsByMonthData = await sequelize.query(`
+                SELECT 
+                    TO_CHAR(DATE_TRUNC('month', "createdAt"), 'Mon') as month,
+                    COUNT(*) as bookings
+                FROM "Bookings"
+                WHERE "createdAt" >= NOW() - INTERVAL '12 months'
+                GROUP BY DATE_TRUNC('month', "createdAt")
+                ORDER BY DATE_TRUNC('month', "createdAt")
+            `, { type: sequelize.QueryTypes.SELECT });
+            
+            // Get top properties by booking count and revenue
+            const topProperties = await sequelize.query(`
+                SELECT 
+                    l.id,
+                    l.title,
+                    COUNT(b.id) as bookings,
+                    SUM(p.amount) as revenue
+                FROM "Listings" l
+                LEFT JOIN "Bookings" b ON l.id = b."listingId"
+                LEFT JOIN "Payments" p ON b.id = p."bookingId" AND p.status = 'completed'
+                GROUP BY l.id, l.title
+                ORDER BY revenue DESC NULLS LAST
+                LIMIT 5
+            `, { type: sequelize.QueryTypes.SELECT });
+            
+            // Format recent bookings to match frontend expectations
+            const formattedRecentBookings = recentBookings.map(booking => ({
+                id: booking.id,
+                listingTitle: booking.listing?.title || 'Unknown Property',
+                guestName: booking.guest?.name || 'Unknown Guest',
+                checkIn: booking.checkIn,
+                checkOut: booking.checkOut,
+                totalPrice: booking.totalAmount || 0,
+                status: booking.status || 'pending'
+            }));
+
+            // Convert the revenue for topProperties from string to number if needed
+            const formattedTopProperties = topProperties.map(property => ({
+                id: property.id,
+                title: property.title,
+                bookings: parseInt(property.bookings, 10) || 0,
+                revenue: parseFloat(property.revenue) || 0
+            }));
+            
+            // Format response to match frontend interface
             res.json({
-                counts: {
-                    users: usersCount,
-                    hosts: hostsCount,
-                    properties: propertiesCount,
-                    bookings: bookingsCount,
-                    revenue: revenueResult[0]?.total ? parseFloat(revenueResult[0].total) : 0
-                },
-                recent: {
-                    bookings: recentBookings,
-                    users: recentUsers
-                }
+                totalRevenue: revenueResult[0]?.total ? parseFloat(revenueResult[0].total) : 0,
+                totalBookings: bookingsCount,
+                totalProperties: propertiesCount,
+                occupancyRate: 0, // Placeholder, calculate if needed
+                totalUsers: usersCount,
+                totalHosts: hostsCount,
+                recentBookings: formattedRecentBookings,
+                revenueByMonth: revenueByMonthData,
+                bookingsByMonth: bookingsByMonthData,
+                topProperties: formattedTopProperties
             });
         } catch (error) {
             console.error('Error fetching dashboard stats:', error);
