@@ -22,10 +22,10 @@ const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
 const reviewRoutes = require('./routes/reviewRoutes'); // Add review routes
-
-
 const notificationRoutes = require('./routes/notificationRoutes');
 const searchRoutes = require('./routes/searchRoutes');
+const debugRoutes = require('./routes/debugRoutes'); // Debug routes for troubleshooting
+
 const app = express();
 
 /* ───────────── Global middleware ───────────── */
@@ -80,6 +80,7 @@ app.use('/api/admin', adminRoutes); // Add admin routes
 app.use('/api/reviews', reviewRoutes); // Add review routes
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/debug', debugRoutes); // Debug routes for troubleshooting
 
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {

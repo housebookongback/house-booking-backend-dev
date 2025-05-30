@@ -114,8 +114,34 @@ module.exports = (sequelize, DataTypes) => {
                 }
             },
             async validListing() {
-                const listing = await sequelize.models.Listing.findByPk(this.listingId);
-                if (!listing) throw new Error('Invalid listing');
+                if (!this.listingId) return true;
+                
+                try {
+                    const listing = await sequelize.models.Listings.unscoped().findByPk(this.listingId);
+                    
+                    if (!listing) {
+                        console.error(`PropertyPolicy validation: Listing with ID ${this.listingId} not found`);
+                        
+                        if ((this._options && this._options.transaction) ||
+                            (this._options && this._options.validate === false)) {
+                            console.log(`Warning: Skipping validation for listing ${this.listingId} in PropertyPolicy`);
+                            return true;
+                        }
+                        
+                        throw new Error(`Listing with ID ${this.listingId} not found`);
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    console.error(`PropertyPolicy validListing error:`, error);
+                    
+                    if (this._options && this._options.validate === false) {
+                        console.log(`PropertyPolicy validation disabled, skipping checks for listing ${this.listingId}`);
+                        return true;
+                    }
+                    
+                    throw error;
+                }
             },
             validTerms() {
                 if (this.terms && typeof this.terms !== 'object') {

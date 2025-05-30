@@ -80,12 +80,10 @@ router.post('/:listingId/photos', authenticate, uploadMultiple, listingControlle
 router.patch('/:listingId/amenities', authenticate, listingController.updateAmenities);
 router.patch('/:listingId/amenities-simple', authenticate, listingController.updateAmenitiesSimple);
 
-// Step 6: Rules
+// Rules Update 
 router.patch('/:listingId/rules', authenticate, listingController.updateRules);
-router.patch('/:listingId/rules-simple', authenticate, listingController.updateRulesSimple);
 
-// PATCH /:listingId/calendar - Update listing calendar (Step 7)
-// Body: Array of calendar entries [{ date, isAvailable, price }]
+// Calendar Update
 router.patch('/:listingId/calendar', authenticate, listingController.updateCalendar);
 
 // Step Status Management
@@ -105,7 +103,7 @@ router.patch('/:listingId/toggle-status', authenticate, listingController.toggle
 // Emergency path for force updating status when publish doesn't work
 router.post('/:listingId/force-status-update', authenticate, listingController.forceUpdateStatus);
 
-// Direct update endpoint for fallback
+// Make sure these routes are also accessible - additional routes for when the standard ones fail
 router.post('/:listingId/direct-update', authenticate, listingController.directUpdateListing);
 
 // Utility route - schema check and fix (protect with admin auth later)
