@@ -83,7 +83,7 @@ const register = async (req, res) => {
 
 /**
  * Login user
- * @route POST /api/auth/login
+ * @route POST /api/auth/home
  */
 const login = async (req, res) => {
     try {
@@ -316,7 +316,7 @@ const handleGoogleCallback = async (req, res) => {
         const { code } = req.query;
         
         if (!code) {
-            return res.redirect(`${process.env.appUrl}/login?error=${encodeURIComponent('Authorization code is required')}`);
+            return res.redirect(`${process.env.appUrl}/home?error=${encodeURIComponent('Authorization code is required')}`);
         }
 
         // Exchange the authorization code for tokens
@@ -376,7 +376,7 @@ const handleGoogleCallback = async (req, res) => {
         });
         
         // Redirect to login page with error
-        return res.redirect(`${process.env.FRONTEND_URL || process.env.appUrl}/login?error=${encodeURIComponent('Failed to authenticate with Google')}`);
+        return res.redirect(`${process.env.FRONTEND_URL || process.env.appUrl}/home?error=${encodeURIComponent('Failed to authenticate with Google')}`);
     }
 };
 

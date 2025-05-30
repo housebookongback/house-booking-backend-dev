@@ -36,6 +36,31 @@ A robust Express.js backend for a house booking platform with PostgreSQL and Seq
   - Search history
   - Location-based search
 
+## Review Management
+
+The platform includes a comprehensive review system for properties:
+
+- Guests can leave reviews for properties they've stayed at
+- Hosts can respond to reviews
+- Admin panel for managing all reviews with filtering and search capabilities
+- Visibility control (publish/hide) for inappropriate content
+
+To generate sample review data from completed bookings, run:
+
+```bash
+node generate-reviews.js
+```
+
+This will create realistic reviews for completed bookings, including host responses. The script handles the following:
+
+- Creates guest reviews for properties (80% of completed bookings will have reviews)
+- Adds host responses (70% of guest reviews will have responses)
+- Creates host reviews of guests (60% of bookings with guest reviews)
+- Updates host average ratings
+- Sets realistic timestamps based on checkout dates
+
+To access the review management in the admin panel, navigate to the Reviews section.
+
 ## Tech Stack
 
 - Node.js & Express.js
@@ -93,7 +118,7 @@ npm start
 ### Authentication Endpoints
 
 - `POST /api/auth/register` - Register a new user
-- `POST /api/auth/login` - User login
+- `POST /api/auth/home` - User login
 - `GET /api/auth/verify/:token` - Verify email
 - `POST /api/auth/forgot-password` - Request password reset
 - `POST /api/auth/reset-password` - Reset password
