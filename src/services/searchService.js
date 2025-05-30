@@ -185,9 +185,8 @@ const searchService = {
                 [Op.notIn]: sequelize.literal(`(
                     SELECT DISTINCT "listingId"
                     FROM "BookingCalendars"
-                    WHERE "date" >= '${checkIn}' AND "date" <= '${checkOut}'
-                    AND "isAvailable" = false
-                )`)
+                    WHERE "date" >= ? AND "date" <= ? AND "isAvailable" = false
+                )`, [checkIn, checkOut])
             };
         }
 

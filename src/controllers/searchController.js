@@ -7,9 +7,23 @@ const searchController = {
     // Basic search with filters
     search: async (req, res) => {
         try {
+            // Parse numbers early with defaults
+            const page = parseInt(req.query.page, 10) || 1;
+            const limit = parseInt(req.query.limit, 10) || 9;
+
+            // Handle date parameters
+            const { checkIn, checkOut, ...otherQuery } = req.query;
+
+            // Parse categories if present
+            const categories = otherQuery.categories?.split(',').map(Number);
+
             const searchParams = {
-                ...req.query,
-                categories: req.query.categories?.split(',').map(Number)
+                ...otherQuery,
+                checkIn,    // ISO string from frontend
+                checkOut,   // ISO string from frontend
+                page,
+                limit,
+                categories
             };
             
             const query = await searchService.buildSearchQuery(searchParams);
@@ -30,9 +44,9 @@ const searchController = {
                 data: {
                     listings: rows,
                     total: count,
-                    page: parseInt(searchParams.page) || 1,
-                    limit: parseInt(searchParams.limit) || 20,
-                    totalPages: Math.ceil(count / (parseInt(searchParams.limit) || 20))
+                    page,
+                    limit,
+                    totalPages: Math.ceil(count / limit)
                 }
             });
         } catch (error) {
@@ -43,6 +57,14 @@ const searchController = {
                 return res.status(400).json({
                     success: false,
                     message: error.message
+                });
+            }
+
+            // Handle JSON parse errors for dateRange
+            if (error instanceof SyntaxError && error.message.includes('JSON')) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid date range format'
                 });
             }
 
