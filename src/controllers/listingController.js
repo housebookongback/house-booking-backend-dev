@@ -351,7 +351,8 @@ const listingController = {
                     // Apply status and isActive filtering only for public listings, not for host listings
                     ...(host !== 'true' && { 
                         status: 'published',
-                        isActive: true
+                        isActive: true,
+                        isPublic: true // Only show public listings to guests
                     }),
                     // If host parameter is provided, filter by hostId
                     // This ensures hosts only see their own listings
@@ -506,6 +507,27 @@ const listingController = {
         }
     },
 
+    getCategories: async (req, res) => {
+        try {
+            const categories = await Category.findAll({
+                attributes: ['id', 'name', 'description', 'icon', 'slug'],
+                order: [['name', 'ASC']],
+                where: { isActive: true }  // Only get active categories
+            });
+            
+            res.json({
+                success: true,
+                data: categories
+            });
+        } catch (error) {
+            console.error('Error fetching categories:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch categories'
+            });
+        }
+    },
+
     createDraftListing: async (req, res) => {
         try {
             const {
@@ -617,7 +639,22 @@ const listingController = {
                     rules: false,
                     calendar: false
                 },
-                isActive: true
+                // Add default values for all required fields
+                isActive: true,
+                isPublic: false,
+                // Details defaults
+                bedrooms: 1,
+                bathrooms: 1,
+                beds: 1,
+                accommodates: 2,
+                adultGuests: 1,
+                childGuests: 0,
+                // Pricing defaults
+                pricePerNight: 100,
+                cleaningFee: 50,
+                securityDeposit: 200,
+                minimumNights: 1,
+                maximumNights: 30
             });
 
             res.status(201).json({
@@ -971,12 +1008,11 @@ const listingController = {
                 });
             }
 
-            // Find the listing
-            const listing = await Listing.findOne({
+            // Find the listing - don't restrict to draft status
+            const listing = await Listing.unscoped().findOne({
                 where: {
                     id: listingId,
-                    hostId: req.user.id,
-                    status: 'draft'
+                    hostId: req.user.id
                 }
             });
 
@@ -989,11 +1025,11 @@ const listingController = {
 
             // Parse values to ensure they're the correct type
             const parsedDetails = {
-                bedrooms: parseInt(bedrooms, 10),
-                bathrooms: parseFloat(bathrooms),
-                beds: parseInt(beds, 10),
-                accommodates: parseInt(accommodates, 10),
-                adultGuests: parseInt(adultGuests, 10),
+                bedrooms: parseInt(bedrooms, 10) || 1,
+                bathrooms: parseFloat(bathrooms) || 1,
+                beds: parseInt(beds, 10) || 1,
+                accommodates: parseInt(accommodates, 10) || 2,
+                adultGuests: parseInt(adultGuests, 10) || 1,
                 childGuests: parseInt(childGuests, 10) || 0,
                 step: 3,
                 stepStatus: {
@@ -1002,22 +1038,58 @@ const listingController = {
                 }
             };
 
-            // Update details and mark step as complete
-            await listing.update(parsedDetails);
+            console.log('Updating listing with parsed details:', parsedDetails);
 
+            // Update details and mark step as complete
+            try {
+                await listing.update(parsedDetails);
+                console.log('Listing details updated successfully with Sequelize');
+            } catch (updateError) {
+                console.error('Error updating with Sequelize, trying direct SQL:', updateError);
+                
+                // Try with direct SQL as a fallback
+                await db.sequelize.query(
+                    `UPDATE "Listings" SET 
+                    "bedrooms" = $1, 
+                    "bathrooms" = $2, 
+                    "beds" = $3, 
+                    "accommodates" = $4, 
+                    "adultGuests" = $5, 
+                    "childGuests" = $6, 
+                    "updatedAt" = NOW() 
+                    WHERE id = $7`,
+                    {
+                        bind: [
+                            parsedDetails.bedrooms,
+                            parsedDetails.bathrooms,
+                            parsedDetails.beds,
+                            parsedDetails.accommodates,
+                            parsedDetails.adultGuests,
+                            parsedDetails.childGuests,
+                            listingId
+                        ],
+                        type: db.sequelize.QueryTypes.UPDATE
+                    }
+                );
+                console.log('Listing details updated successfully with direct SQL');
+            }
+
+            // Verify that the update worked
+            const updatedListing = await Listing.unscoped().findByPk(listingId);
+            
             res.json({
                 success: true,
                 message: 'Details updated successfully',
                 data: {
-                    id: listing.id,
-                    bedrooms: listing.bedrooms,
-                    bathrooms: listing.bathrooms,
-                    beds: listing.beds,
-                    accommodates: listing.accommodates,
-                    adultGuests: listing.adultGuests,
-                    childGuests: listing.childGuests,
-                    step: listing.step,
-                    stepStatus: listing.stepStatus
+                    id: updatedListing.id,
+                    bedrooms: updatedListing.bedrooms,
+                    bathrooms: updatedListing.bathrooms,
+                    beds: updatedListing.beds,
+                    accommodates: updatedListing.accommodates,
+                    adultGuests: updatedListing.adultGuests,
+                    childGuests: updatedListing.childGuests,
+                    step: updatedListing.step,
+                    stepStatus: updatedListing.stepStatus
                 }
             });
         } catch (error) {
@@ -1035,6 +1107,15 @@ const listingController = {
         try {
             const { listingId } = req.params;
             const { pricePerNight, cleaningFee, securityDeposit, minimumNights, maximumNights } = req.body;
+
+            console.log('Updating pricing with data:', {
+                listingId,
+                pricePerNight,
+                cleaningFee,
+                securityDeposit,
+                minimumNights,
+                maximumNights
+            });
 
             // Validate input data
             const errors = {};
@@ -1060,11 +1141,11 @@ const listingController = {
                 });
             }
 
-            const listing = await Listing.findOne({
+            // Find the listing - don't restrict to draft status
+            const listing = await Listing.unscoped().findOne({
                 where: {
                     id: listingId,
-                    hostId: req.user.id,
-                    status: 'draft'
+                    hostId: req.user.id
                 }
             });
 
@@ -1077,13 +1158,13 @@ const listingController = {
 
             // Parse values to ensure they're the correct type
             const parsedPricing = {
-                pricePerNight: parseFloat(pricePerNight),
-                cleaningFee: cleaningFee !== undefined && cleaningFee !== null ? parseFloat(cleaningFee) : 0,
-                securityDeposit: securityDeposit !== undefined && securityDeposit !== null ? parseFloat(securityDeposit) : 0,
-                minimumNights: parseInt(minimumNights, 10),
+                pricePerNight: parseFloat(pricePerNight) || 100,
+                cleaningFee: cleaningFee !== undefined && cleaningFee !== null ? parseFloat(cleaningFee) : 50,
+                securityDeposit: securityDeposit !== undefined && securityDeposit !== null ? parseFloat(securityDeposit) : 200,
+                minimumNights: parseInt(minimumNights, 10) || 1,
                 maximumNights: maximumNights !== undefined && maximumNights !== null ? 
                     parseInt(maximumNights, 10) : 
-                    Math.max(30, parseInt(minimumNights, 10) * 2),
+                    Math.max(30, parseInt(minimumNights, 10) * 2) || 30,
                 step: 4,
                 stepStatus: {
                     ...listing.stepStatus,
@@ -1091,21 +1172,55 @@ const listingController = {
                 }
             };
 
+            console.log('Updating listing with parsed pricing:', parsedPricing);
+
             // Update pricing and mark step as complete
-            await listing.update(parsedPricing);
+            try {
+                await listing.update(parsedPricing);
+                console.log('Listing pricing updated successfully with Sequelize');
+            } catch (updateError) {
+                console.error('Error updating with Sequelize, trying direct SQL:', updateError);
+                
+                // Try with direct SQL as a fallback
+                await db.sequelize.query(
+                    `UPDATE "Listings" SET 
+                    "pricePerNight" = $1, 
+                    "cleaningFee" = $2, 
+                    "securityDeposit" = $3, 
+                    "minimumNights" = $4, 
+                    "maximumNights" = $5,
+                    "updatedAt" = NOW() 
+                    WHERE id = $6`,
+                    {
+                        bind: [
+                            parsedPricing.pricePerNight,
+                            parsedPricing.cleaningFee,
+                            parsedPricing.securityDeposit,
+                            parsedPricing.minimumNights,
+                            parsedPricing.maximumNights,
+                            listingId
+                        ],
+                        type: db.sequelize.QueryTypes.UPDATE
+                    }
+                );
+                console.log('Listing pricing updated successfully with direct SQL');
+            }
+
+            // Verify that the update worked
+            const updatedListing = await Listing.unscoped().findByPk(listingId);
 
             res.json({
                 success: true,
                 message: 'Pricing updated successfully',
                 data: {
-                    id: listing.id,
-                    pricePerNight: listing.pricePerNight,
-                    cleaningFee: listing.cleaningFee,
-                    securityDeposit: listing.securityDeposit,
-                    minimumNights: listing.minimumNights,
-                    maximumNights: listing.maximumNights,
-                    step: listing.step,
-                    stepStatus: listing.stepStatus
+                    id: updatedListing.id,
+                    pricePerNight: updatedListing.pricePerNight,
+                    cleaningFee: updatedListing.cleaningFee,
+                    securityDeposit: updatedListing.securityDeposit,
+                    minimumNights: updatedListing.minimumNights,
+                    maximumNights: updatedListing.maximumNights,
+                    step: updatedListing.step,
+                    stepStatus: updatedListing.stepStatus
                 }
             });
         } catch (error) {
@@ -1421,6 +1536,161 @@ const listingController = {
         }
     },
 
+    // Set a photo as featured/cover image
+    setPhotoAsFeatured: async (req, res) => {
+        try {
+            const { listingId, photoId } = req.params;
+            console.log(`Setting photo ${photoId} as featured for listing ${listingId}`);
+            
+            // Verify listing ownership
+            const listing = await Listing.unscoped().findOne({
+                where: {
+                    id: listingId,
+                    hostId: req.user.id
+                }
+            });
+            
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or not authorized'
+                });
+            }
+            
+            // Verify photo exists and belongs to the listing
+            const photo = await Photo.findOne({
+                where: {
+                    id: photoId,
+                    listingId: listingId
+                }
+            });
+            
+            if (!photo) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Photo not found or does not belong to this listing'
+                });
+            }
+            
+            // Begin transaction to update all photos atomically
+            await db.sequelize.transaction(async (t) => {
+                // First, unset all photos as cover
+                await Photo.update(
+                    { isCover: false },
+                    { 
+                        where: { listingId },
+                        transaction: t
+                    }
+                );
+                
+                // Then set the selected photo as cover
+                await photo.update(
+                    { isCover: true },
+                    { transaction: t }
+                );
+            });
+            
+            // Get all updated photos to return in response
+            const photos = await Photo.findAll({
+                where: { listingId },
+                order: [['displayOrder', 'ASC']]
+            });
+            
+            return res.json({
+                success: true,
+                message: 'Featured photo updated successfully',
+                data: {
+                    photos: photos.map(p => ({
+                        id: p.id,
+                        url: p.url,
+                        isCover: p.isCover,
+                        caption: p.caption || '',
+                        displayOrder: p.displayOrder || 0
+                    }))
+                }
+            });
+        } catch (error) {
+            console.error('Error setting featured photo:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update featured photo',
+                details: error.message
+            });
+        }
+    },
+
+    // Delete a specific photo from a listing
+    deletePhoto: async (req, res) => {
+        try {
+            const { listingId, photoId } = req.params;
+            console.log(`Deleting photo ${photoId} from listing ${listingId}`);
+            
+            // Verify listing ownership
+            const listing = await Listing.unscoped().findOne({
+                where: {
+                    id: listingId,
+                    hostId: req.user.id
+                }
+            });
+            
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or not authorized'
+                });
+            }
+            
+            // Check if the photo exists
+            const photo = await Photo.findOne({
+                where: {
+                    id: photoId,
+                    listingId: listingId
+                }
+            });
+            
+            if (!photo) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Photo not found or already deleted'
+                });
+            }
+            
+            // Check if this is the cover photo
+            const isCover = photo.isCover;
+            
+            // Delete the photo
+            await photo.destroy({ force: true });
+            console.log(`Photo ${photoId} deleted from listing ${listingId}`);
+            
+            // If the deleted photo was the cover/featured photo, 
+            // set the first remaining photo as the new cover
+            if (isCover) {
+                const remainingPhotos = await Photo.findAll({
+                    where: { listingId: listingId },
+                    order: [['displayOrder', 'ASC']]
+                });
+                
+                if (remainingPhotos.length > 0) {
+                    await remainingPhotos[0].update({ isCover: true });
+                    console.log(`Photo ${remainingPhotos[0].id} set as new cover photo`);
+                }
+            }
+            
+            // Return success
+            return res.json({
+                success: true,
+                message: 'Photo deleted successfully'
+            });
+        } catch (error) {
+            console.error('Error deleting photo:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to delete photo',
+                details: error.message
+            });
+        }
+    },
+
     // Step 6: Rules
     updateRules: async (req, res) => {
         const { listingId } = req.params;
@@ -1559,7 +1829,7 @@ const listingController = {
         // 1) Validate payload
         if (!Array.isArray(calendar)) {
             return res.status(400).json({
-                success: false,
+                    success: false,
                 error: '`calendar` must be an array of { date, isAvailable, price? }'
             });
         }
@@ -1575,114 +1845,31 @@ const listingController = {
         try {
             console.log(`Updating calendar for listing ${listingId} with ${calendar.length} entries`);
             
-            // IMPROVEMENT: Find the listing without user restriction for development flexibility
-            // This allows any user to update the calendar in development environments
-            let listing;
-            
-            try {
-                // First try with user restriction
-                if (req.user && req.user.id) {
-                    listing = await Listing.unscoped().findOne({
+            // Find the listing with user restriction
+            const listing = await Listing.unscoped().findOne({
                         where: {
                             id: listingId,
                             hostId: req.user.id
                         }
                     });
-                
-                    if (listing) {
-                        console.log(`Found listing ${listingId} owned by user ${req.user.id}`);
-                    }
-                }
-                
-                // Fallback: if not found or no user, try just by ID without user restriction
-                if (!listing) {
-                    console.log(`No listing found with ID ${listingId} for user ${req.user?.id || 'unknown'}, trying without host restriction`);
-                    listing = await Listing.unscoped().findByPk(listingId);
-                    
-                    if (listing) {
-                        console.log(`Found listing ${listingId} without host restriction`);
-                    }
-                }
-            } catch (listingFindError) {
-                console.error(`Error finding listing: ${listingFindError.message}`);
-                // Try one more time with just the ID as last resort
-                listing = await Listing.unscoped().findByPk(listingId);
-            }
-            
-            // Always create the listing if it doesn't exist
-            if (!listing) {
-                try {
-                    console.log(`Creating placeholder listing ${listingId} on-demand`);
-                    listing = await Listing.create({
-                        id: parseInt(listingId),
-                        title: `Listing ${listingId}`,
-                        slug: `listing-${listingId}`,
-                        description: 'Auto-generated listing for calendar functionality',
-                        hostId: req.user?.id || 1, // Using user ID or default
-                        status: 'draft',
-                        isActive: true,
-                        pricePerNight: 100,
-                        minimumNights: 1,
-                        maximumNights: 30,
-                        stepStatus: {
-                            basicInfo: true,
-                            location: false,
-                            details: false,
-                            pricing: false,
-                            photos: false,
-                            rules: false,
-                            calendar: false
-                        }
-                    }, { validate: false });
-                    console.log(`Created new listing with ID ${listing.id}`);
-                } catch (createError) {
-                    console.error(`Error creating listing: ${createError.message}`);
-                    
-                    // Try raw SQL as a last resort
-                    try {
-                        await db.sequelize.query(
-                            `INSERT INTO "Listings" (id, title, "hostId", status, "isActive", "pricePerNight", "createdAt", "updatedAt")
-                             VALUES (:id, :title, :hostId, 'draft', TRUE, 100, NOW(), NOW())`,
-                            {
-                                replacements: { 
-                                    id: listingId, 
-                                    title: `Listing ${listingId}`, 
-                                    hostId: req.user?.id || 1 
-                                },
-                                type: db.sequelize.QueryTypes.INSERT
-                            }
-                        );
-                        
-                        // Try to retrieve the listing again
-                        listing = await Listing.unscoped().findByPk(listingId);
-                        console.log(`Created listing via raw SQL: ${listing ? 'Success' : 'Failed'}`);
-                    } catch (sqlError) {
-                        console.error(`SQL listing creation failed: ${sqlError.message}`);
-                    }
-                }
-            }
-            
+
             if (!listing) {
                 return res.status(404).json({
                     success: false,
-                    error: 'Listing not found and could not be created'
+                    error: 'Listing not found or not authorized'
                 });
             }
 
-            // 2) Preprocess the dates to ensure they're parsed correctly
+            // 2) Process the dates to ensure they're parsed correctly
             const processedCalendar = calendar.map(entry => {
                 // Make a copy of the entry to avoid modifying the original
                 const processedEntry = { ...entry };
                 
-                // Try to intelligently parse the date
+                // Try to parse the date
                 if (entry.date) {
                     try {
-                        // Use our dateUtils to standardize the date
-                        const standardizedDateStr = dateUtils.standardizeDate(entry.date);
-                        console.log(`Standardized date: ${entry.date} -> ${standardizedDateStr}`);
-                        
                         // Convert to Date object for database
-                        const parsedDate = new Date(standardizedDateStr);
+                        const parsedDate = new Date(entry.date);
                         
                         // Validate the parsed date
                         if (parsedDate && !isNaN(parsedDate.getTime())) {
@@ -1692,18 +1879,15 @@ const listingController = {
                             // Update the entry with the corrected date
                             processedEntry.date = parsedDate;
                             processedEntry.originalDate = entry.date; // Keep original for reference
-                            
-                            // Log the conversion
-                            console.log(`Processed date: ${entry.date} -> ${parsedDate.toISOString().split('T')[0]}`);
-                        } else {
-                            console.error(`Invalid date format after standardization: ${standardizedDateStr} from ${entry.date}`);
+                    } else {
+                            console.error(`Invalid date format: ${entry.date}`);
                             return null; // Skip invalid dates
                         }
                     } catch (dateError) {
                         console.error(`Error parsing date ${entry.date}:`, dateError.message);
                         return null; // Skip invalid dates
                     }
-                } else {
+                            } else {
                     console.error(`Missing date in calendar entry:`, entry);
                     return null; // Skip entries without dates
                 }
@@ -1722,19 +1906,9 @@ const listingController = {
             // Extract the dates for deletion
             const dates = processedCalendar.map(entry => entry.date);
             
-            // Log the processed dates
-            console.log(`Processed calendar entries:`, 
-                processedCalendar.map(entry => ({
-                    original: entry.originalDate,
-                    processed: entry.date instanceof Date ? entry.date.toISOString().split('T')[0] : String(entry.date),
-                    isAvailable: entry.isAvailable
-                }))
-            );
-            
             // Delete existing entries for these dates
             if (dates.length > 0) {
-                try {
-                    const deleteResult = await BookingCalendar.destroy({
+                await db.BookingCalendar.destroy({
                         where: {
                             listingId,
                             date: {
@@ -1743,34 +1917,6 @@ const listingController = {
                         },
                         force: true // Ensure hard delete
                     });
-                    console.log(`Deleted ${deleteResult} existing calendar entries for the specified dates`);
-                } catch (deleteError) {
-                    console.error(`Error deleting calendar entries: ${deleteError.message}`);
-                    
-                    // Try raw SQL deletion as fallback
-                    try {
-                        const dateStrings = dates.map(date => {
-                            return date instanceof Date ? date.toISOString().split('T')[0] : String(date);
-                        });
-                        
-                        // Format dates for SQL query
-                        const formattedDates = dateStrings.map(date => `'${date}'`).join(',');
-                        
-                        if (formattedDates) {
-                            await db.sequelize.query(
-                                `DELETE FROM "BookingCalendars" WHERE "listingId" = :listingId AND "date"::date IN (${formattedDates})`,
-                                {
-                                    replacements: { listingId },
-                                    type: db.sequelize.QueryTypes.DELETE
-                                }
-                            );
-                            console.log(`Deleted existing calendar entries using raw SQL`);
-                        }
-                    } catch (rawDeleteError) {
-                        console.error(`Raw SQL deletion failed: ${rawDeleteError.message}`);
-                        // Continue with the operation even if delete fails
-                    }
-                }
             }
             
             // 3) Create new entries for the processed dates
@@ -1779,144 +1925,30 @@ const listingController = {
                     listingId: parseInt(listingId),
                     date: entry.date,
                     isAvailable: !!entry.isAvailable, // Ensure boolean
-                    basePrice: entry.price ? parseFloat(entry.price) : (listing.pricePerNight || 100),
-                    minStay: entry.minStay ? parseInt(entry.minStay) : (listing.minimumNights || 1),
-                    maxStay: entry.maxStay ? parseInt(entry.maxStay) : (listing.maximumNights || 30),
+                    basePrice: entry.price ? parseFloat(entry.price) : listing.pricePerNight,
+                    minStay: entry.minStay ? parseInt(entry.minStay) : listing.minimumNights,
+                    maxStay: entry.maxStay ? parseInt(entry.maxStay) : listing.maximumNights,
                     checkInAllowed: entry.checkInAllowed !== undefined ? !!entry.checkInAllowed : true,
                     checkOutAllowed: entry.checkOutAllowed !== undefined ? !!entry.checkOutAllowed : true
                 };
             });
             
-            console.log(`Prepared ${calendarEntries.length} valid calendar entries for creation`);
-            
-            // Log a sample entry for debugging
-            if (calendarEntries.length > 0) {
-                console.log('Sample entry:', JSON.stringify(calendarEntries[0], null, 2));
-            }
-            
-            // CRITICAL FIX: Use raw SQL to insert entries directly
-            const entriesForSqlBackup = calendarEntries.map(entry => ({
-                listingId: entry.listingId,
-                date: entry.date instanceof Date ? entry.date.toISOString().split('T')[0] : String(entry.date),
-                isAvailable: entry.isAvailable,
-                basePrice: entry.basePrice,
-                minStay: entry.minStay,
-                maxStay: entry.maxStay,
-                checkInAllowed: entry.checkInAllowed,
-                checkOutAllowed: entry.checkOutAllowed
-            }));
-            
-            let successfullyCreated = false;
-            let createdEntries = [];
-            
-            // Try multiple strategies to ensure calendar entries are created
-            try {
-                // Strategy 1: BulkCreate with validation disabled
-                createdEntries = await BookingCalendar.bulkCreate(calendarEntries, { 
+            // Create the calendar entries
+            await db.BookingCalendar.bulkCreate(calendarEntries, { 
                     validate: false,
                     ignoreDuplicates: true
                 });
-                
-                console.log(`Created ${createdEntries.length} calendar entries (handling duplicates)`);
-                successfullyCreated = createdEntries.length > 0;
-            } catch (bulkCreateError) {
-                console.error(`BulkCreate failed: ${bulkCreateError.message}`);
-                
-                // Strategy 2: Direct SQL insert
-                try {
-                    console.log('Trying direct SQL insert as fallback...');
-                    
-                    // Insert each entry individually
-                    for (const entry of entriesForSqlBackup) {
-                        try {
-                            await db.sequelize.query(
-                                `INSERT INTO "BookingCalendars" 
-                                 ("listingId", "date", "isAvailable", "basePrice", "minStay", "maxStay", 
-                                  "checkInAllowed", "checkOutAllowed", "createdAt", "updatedAt")
-                                 VALUES 
-                                 (:listingId, :date, :isAvailable, :basePrice, :minStay, :maxStay, 
-                                  :checkInAllowed, :checkOutAllowed, NOW(), NOW())
-                                 ON CONFLICT ("listingId", "date") 
-                                 DO UPDATE SET 
-                                    "isAvailable" = :isAvailable,
-                                    "basePrice" = :basePrice,
-                                    "updatedAt" = NOW()`,
-                                {
-                                    replacements: {
-                                        listingId: entry.listingId,
-                                        date: entry.date,
-                                        isAvailable: entry.isAvailable,
-                                        basePrice: entry.basePrice || 100,
-                                        minStay: entry.minStay || 1,
-                                        maxStay: entry.maxStay || 30,
-                                        checkInAllowed: entry.checkInAllowed !== undefined ? entry.checkInAllowed : true,
-                                        checkOutAllowed: entry.checkOutAllowed !== undefined ? entry.checkOutAllowed : true
-                                    },
-                                    type: db.sequelize.QueryTypes.INSERT
-                                }
-                            );
-                            successfullyCreated = true;
-                        } catch (singleInsertError) {
-                            console.error(`Error inserting entry for date ${entry.date}: ${singleInsertError.message}`);
-                        }
-                    }
-                    
-                    console.log(`Direct SQL insert completed. Success: ${successfullyCreated}`);
-                } catch (sqlInsertError) {
-                    console.error(`All SQL insert attempts failed: ${sqlInsertError.message}`);
-                }
-            }
-            
-            if (!successfullyCreated) {
-                return res.status(500).json({
-                    success: false,
-                    error: 'Failed to create any calendar entries despite multiple attempts',
-                    details: 'The system tried several methods but was unable to save the calendar data'
-                });
-            }
             
             // 4) Update step status
-            try {
                 const stepStatus = listing.stepStatus || {};
-                await listing.update({
-                    stepStatus: { 
+            await listing.update({
+                stepStatus: { 
                         ...stepStatus,
                         calendar: true 
                     }
                 });
-                console.log(`Successfully updated calendar for listing ${listingId}`);
-            } catch (updateError) {
-                console.error(`Error updating listing step status: ${updateError.message}`);
-                // Continue anyway since calendar entries were created
-            }
-
-            // 5) Double-check that the entries were actually created
-            try {
-                const finalCheck = await BookingCalendar.findAll({
-                    where: { 
-                        listingId
-                    },
-                    order: [['date', 'ASC']],
-                    limit: 10 // Just get a sample to confirm
-                });
-                
-                console.log(`Final verification: Found ${finalCheck.length} calendar entries in database for listing ${listingId}`);
-                
-                if (finalCheck.length > 0) {
-                    // List sample dates for verification
-                    console.log("Sample dates in database:");
-                    finalCheck.forEach(entry => {
-                        const dateStr = entry.date instanceof Date 
-                            ? entry.date.toISOString().split('T')[0] 
-                            : String(entry.date);
-                        console.log(`- ${dateStr} (isAvailable: ${entry.isAvailable})`);
-                    });
-                }
-            } catch (verifyError) {
-                console.error(`Error in final verification: ${verifyError.message}`);
-            }
-
-            // Return the calendar entries
+            
+            // Return success
             return res.status(200).json({
                 success: true,
                 message: 'Calendar updated successfully',
@@ -2088,174 +2120,105 @@ const listingController = {
                 } catch (sqlError) {
                     console.error(`Direct SQL query failed: ${sqlError.message}`);
                 }
-                
-                // If still no entries found, check the table structure
-                if (calendarEntries.length === 0) {
-                    try {
-                        // Log calendar table structure for debugging
-                        const tableInfo = await db.sequelize.query(
-                            "SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'BookingCalendars'",
-                            { type: db.sequelize.QueryTypes.SELECT }
-                        );
-                        console.log(`BookingCalendars table structure:`, tableInfo);
+            }
+            
+            // If no calendar entries were found, try to create a basic 90-day availability
+            if (calendarEntries.length === 0 && process.env.NODE_ENV !== 'production') {
+                console.log(`No calendar entries found. Creating 90-day default availability calendar for demonstration.`);
+                try {
+                    const defaultCalendarEntries = [];
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    // Create 90 days of availability starting from today
+                    for (let i = 0; i < 90; i++) {
+                        const date = new Date(today);
+                        date.setDate(today.getDate() + i);
                         
-                        // Also check if the table has any entries at all
-                        const totalCount = await db.sequelize.query(
-                            'SELECT COUNT(*) FROM "BookingCalendars"',
-                            { type: db.sequelize.QueryTypes.SELECT }
-                        );
-                        console.log(`Total entries in BookingCalendars table: ${JSON.stringify(totalCount)}`);
+                        // Every 3rd day is unavailable to create a pattern
+                        const isAvailable = i % 3 !== 0;
                         
-                        // If no entries found, create some test entries to verify functionality
-                        if (process.env.NODE_ENV !== 'production' && (totalCount[0].count === '0' || totalCount[0].count === 0)) {
-                            console.log(`No entries found in BookingCalendars table, creating test entries...`);
-                            
-                            // Create a test entry for tomorrow
-                            const tomorrow = new Date();
-                            tomorrow.setDate(tomorrow.getDate() + 1);
-                            tomorrow.setHours(0, 0, 0, 0);
-                            
-                            try {
-                                const testEntry = await BookingCalendar.create({
-                                    listingId: listing.id,
-                                    date: tomorrow,
-                                    isAvailable: true,
-                                    basePrice: listing.pricePerNight || 100,
-                                    minStay: listing.minimumNights || 1,
-                                    maxStay: listing.maximumNights || 30,
-                                    checkInAllowed: true,
-                                    checkOutAllowed: true
-                                }, { validate: false });
-                                
-                                console.log(`Created test calendar entry: ${JSON.stringify(testEntry)}`);
-                                calendarEntries.push(testEntry);
-                            } catch (testError) {
-                                console.error(`Failed to create test entry: ${testError.message}`);
-                                
-                                // Try raw SQL as last resort
-                                try {
-                                    const tomorrowStr = tomorrow.toISOString().split('T')[0];
-                                    await db.sequelize.query(
-                                        `INSERT INTO "BookingCalendars" ("listingId", "date", "isAvailable", "basePrice", "minStay", "maxStay", "checkInAllowed", "checkOutAllowed", "createdAt", "updatedAt")
-                                        VALUES (:listingId, :date, true, :price, :minStay, :maxStay, true, true, NOW(), NOW())`,
-                                        {
-                                            replacements: {
-                                                listingId: listing.id,
-                                                date: tomorrowStr,
-                                                price: listing.pricePerNight || 100,
-                                                minStay: listing.minimumNights || 1,
-                                                maxStay: listing.maximumNights || 30
-                                            },
-                                            type: db.sequelize.QueryTypes.INSERT
-                                        }
-                                    );
-                                    console.log(`Created test calendar entry using raw SQL`);
-                                    
-                                    // Fetch the entry we just created
-                                    const newEntries = await db.sequelize.query(
-                                        `SELECT * FROM "BookingCalendars" WHERE "listingId" = :listingId AND "date" = :date`,
-                                        {
-                                            replacements: {
-                                                listingId: listing.id,
-                                                date: tomorrowStr
-                                            },
-                                            type: db.sequelize.QueryTypes.SELECT
-                                        }
-                                    );
-                                    
-                                    if (newEntries.length > 0) {
-                                        calendarEntries = newEntries.map(entry => ({
-                                            id: entry.id,
-                                            listingId: entry.listingId,
-                                            date: entry.date,
-                                            isAvailable: entry.isAvailable,
-                                            basePrice: entry.basePrice,
-                                            minStay: entry.minStay || listing.minimumNights || 1,
-                                            maxStay: entry.maxStay || listing.maximumNights || 30,
-                                            checkInAllowed: entry.checkInAllowed,
-                                            checkOutAllowed: entry.checkOutAllowed
-                                        }));
-                                    }
-                                } catch (sqlInsertError) {
-                                    console.error(`SQL insert failed: ${sqlInsertError.message}`);
-                                }
-                            }
-                        }
-                    } catch (metaQueryError) {
-                        console.error(`Error in meta queries: ${metaQueryError.message}`);
+                        defaultCalendarEntries.push({
+                            listingId: listing.id,
+                            date,
+                            isAvailable,
+                            basePrice: isAvailable ? listing.pricePerNight || 100 : undefined,
+                            minStay: listing.minimumNights || 1,
+                            maxStay: listing.maximumNights || 30,
+                            checkInAllowed: isAvailable,
+                            checkOutAllowed: isAvailable
+                        });
                     }
+                    
+                    // Save the default calendar entries
+                    const createdEntries = await BookingCalendar.bulkCreate(defaultCalendarEntries, {
+                        validate: false,
+                        ignoreDuplicates: true
+                    });
+                    
+                    console.log(`Created ${createdEntries.length} default calendar entries for demonstration`);
+                    
+                    // Use these entries as our result
+                    calendarEntries = createdEntries;
+                } catch (createError) {
+                    console.error(`Error creating default calendar entries: ${createError.message}`);
                 }
             }
             
-            // Format the response
-            const formattedEntries = calendarEntries.map(entry => {
-                let dateString;
-                try {
-                    // Handle possible date format issues
-                    if (entry.date instanceof Date) {
-                        dateString = entry.date.toISOString().split('T')[0];
-                    } else if (typeof entry.date === 'string') {
-                        // Try to format if it's already a string
-                        const parsedDate = new Date(entry.date);
-                        if (!isNaN(parsedDate.getTime())) {
-                            dateString = parsedDate.toISOString().split('T')[0];
-                        } else {
-                            dateString = entry.date;
-                        }
-                    } else {
-                        dateString = String(entry.date);
-                    }
-                } catch (dateError) {
-                    console.error(`Error formatting date: ${dateError.message}`);
-                    dateString = String(entry.date);
-                }
+            // Process calendar entries for API response
+            const processedCalendar = calendarEntries.map(entry => {
+                // Handle both Sequelize model instances and raw SQL results
+                const rawEntry = entry.toJSON ? entry.toJSON() : entry;
+                
+                // Format the date as YYYY-MM-DD string
+                const dateObj = new Date(rawEntry.date);
+                const formattedDate = dateObj.toISOString().split('T')[0];
                 
                 return {
-                    date: dateString,
-                    isAvailable: !!entry.isAvailable,
-                    price: parseFloat(entry.basePrice) || listing.pricePerNight || 100,
-                    minStay: entry.minStay || listing.minimumNights || 1,
-                    maxStay: entry.maxStay || listing.maximumNights || 30,
-                    checkInAllowed: !!entry.checkInAllowed,
-                    checkOutAllowed: !!entry.checkOutAllowed
+                    id: rawEntry.id,
+                    listingId: rawEntry.listingId,
+                    date: formattedDate,
+                    isAvailable: rawEntry.isAvailable === true,
+                    price: rawEntry.basePrice,
+                    minStay: rawEntry.minStay,
+                    maxStay: rawEntry.maxStay,
+                    checkInAllowed: rawEntry.checkInAllowed === true,
+                    checkOutAllowed: rawEntry.checkOutAllowed === true,
+                    dayOfWeek: dateObj.getDay(), // 0 = Sunday, 1 = Monday, etc.
+                    dayOfMonth: dateObj.getDate(),
+                    month: dateObj.getMonth() + 1, // 1 = January, 2 = February, etc.
+                    year: dateObj.getFullYear()
                 };
             });
             
-            // Make sure the listing has calendar step marked as completed
-            try {
-                if (listing && (!listing.stepStatus || listing.stepStatus.calendar !== true)) {
-                    const stepStatus = listing.stepStatus || {};
-                    await listing.update({
-                        stepStatus: {
-                            ...stepStatus,
-                            calendar: true
-                        }
-                    }, { validate: false });
-                    console.log(`Updated listing ${listing.id} step status: calendar = true`);
-                }
-            } catch (stepUpdateError) {
-                console.error(`Error updating step status: ${stepUpdateError.message}`);
-            }
-            
+            // Return the processed calendar entries
             return res.status(200).json({
                 success: true,
-                message: 'Calendar retrieved successfully',
                 data: {
                     listing: {
                         id: listing.id,
                         title: listing.title,
-                        status: listing.status,
-                        pricePerNight: listing.pricePerNight
+                        pricePerNight: listing.pricePerNight,
+                        minimumNights: listing.minimumNights,
+                        maximumNights: listing.maximumNights
                     },
-                    calendar: formattedEntries
+                    calendar: processedCalendar,
+                    meta: {
+                        total: processedCalendar.length,
+                        available: processedCalendar.filter(day => day.isAvailable).length,
+                        unavailable: processedCalendar.filter(day => !day.isAvailable).length,
+                        dateRange: {
+                            start: processedCalendar.length > 0 ? processedCalendar[0].date : null,
+                            end: processedCalendar.length > 0 ? processedCalendar[processedCalendar.length - 1].date : null
+                        }
+                    }
                 }
             });
         } catch (error) {
-            console.error('Error retrieving calendar:', error);
+            console.error(`Error fetching calendar:`, error);
             return res.status(500).json({
                 success: false,
-                error: 'Failed to retrieve calendar',
-                details: error.message
+                error: `Failed to fetch calendar: ${error.message}`
             });
         }
     },
@@ -2740,7 +2703,7 @@ const listingController = {
                 });
             }
 
-            if (nights > listing.maximumNights) {
+            if (listing.maximumNights && nights > listing.maximumNights) {
                 return res.status(400).json({
                     success: false,
                     error: `Maximum stay is ${listing.maximumNights} nights`
@@ -2754,17 +2717,7 @@ const listingController = {
                     date: {
                         [Op.between]: [startDate, endDate]
                     }
-                },
-                include: [{
-                    model: db.PriceRule,
-                    as: 'priceRules',
-                    where: {
-                        isActive: true,
-                        startDate: { [Op.lte]: db.sequelize.col('BookingCalendar.date') },
-                        endDate: { [Op.gte]: db.sequelize.col('BookingCalendar.date') }
-                    },
-                    order: [['priority', 'DESC']]
-                }]
+                }
             });
 
             // Generate all dates in the range
@@ -2783,53 +2736,31 @@ const listingController = {
             );
 
             // Check availability and calculate prices for all dates
-            const availability = await Promise.all(dates.map(async (date) => {
+            const availability = dates.map(date => {
                 const dateStr = date.toISOString().split('T')[0];
                 const entry = calendarMap.get(dateStr);
 
                 if (entry) {
-                    // Check date-specific stay limits
-                    if (nights < entry.minStay) {
-                        return {
-                            date: dateStr,
-                            isAvailable: false,
-                            error: `Minimum stay for this date is ${entry.minStay} nights`
-                        };
-                    }
-                    if (entry.maxStay && nights > entry.maxStay) {
-                        return {
-                            date: dateStr,
-                            isAvailable: false,
-                            error: `Maximum stay for this date is ${entry.maxStay} nights`
-                        };
-                    }
-
-                    // Use existing calendar entry
-                    const finalPrice = await entry.getFinalPrice();
                     return {
                         date: dateStr,
                         isAvailable: entry.isAvailable,
-                        basePrice: entry.basePrice,
-                        finalPrice,
-                        minStay: entry.minStay,
-                        maxStay: entry.maxStay,
-                        checkInAllowed: entry.checkInAllowed,
-                        checkOutAllowed: entry.checkOutAllowed
+                        basePrice: entry.basePrice || listing.pricePerNight,
+                        finalPrice: entry.basePrice || listing.pricePerNight,
+                        minStay: entry.minStay || listing.minimumNights,
+                        maxStay: entry.maxStay || listing.maximumNights
                     };
                 } else {
                     // Use listing defaults
                     return {
                         date: dateStr,
-                        isAvailable: listing.defaultAvailability,
+                        isAvailable: true, // Default to available if no entry
                         basePrice: listing.pricePerNight,
                         finalPrice: listing.pricePerNight,
                         minStay: listing.minimumNights,
-                        maxStay: listing.maximumNights,
-                        checkInAllowed: listing.checkInDays.includes(date.getDay()),
-                        checkOutAllowed: listing.checkOutDays.includes(date.getDay())
+                        maxStay: listing.maximumNights
                     };
                 }
-            }));
+            });
 
             return res.json({
                 success: true,
@@ -2837,6 +2768,8 @@ const listingController = {
                     listingId,
                     startDate,
                     endDate,
+                    nights,
+                    totalPrice: availability.reduce((sum, day) => day.isAvailable ? sum + day.finalPrice : sum, 0),
                     availability
                 }
             });
@@ -2963,6 +2896,7 @@ const listingController = {
             // Check if the user should have access (either public listing or user is owner)
             const isPublished = listing.status === 'published' && listing.isActive;
             const isOwner = req.user && listing.hostId === req.user.id;
+            const isPublic = listing.isPublic === true; // Check if listing is marked as public
             
             // For development mode, we'll be more permissive
             const isDevelopment = process.env.NODE_ENV !== 'production';
@@ -2981,1053 +2915,16 @@ const listingController = {
                     success: false,
                     error: 'Not authorized to access this listing'
                 });
+            } else if (!isOwner && !isPublic && !isDevelopment) {
+                // Non-owners cannot access private listings
+                console.log(`User ${req.user?.id} not authorized to view private listing ${listingId}`);
+                return res.status(403).json({
+                    success: false,
+                    error: 'This listing is private and only visible to the host'
+                });
             }
 
             console.log(`Listing ${listingId} found successfully for user ${req.user?.id}`);
-            res.json({
-                success: true,
-                data: listing
-            });
-        } catch (error) {
-            console.error('Error fetching listing:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to fetch listing',
-                details: error.message
-            });
-        }
-    },
-
-    // Utility method to check and fix database schema
-    checkAndFixSchema: async (req, res) => {
-        try {
-            console.log('Starting schema check...');
-            const { force } = req.query;
-            
-            // Get the database interface
-            const queryInterface = db.sequelize.getQueryInterface();
-            
-            // Check if the step column exists in the Listings table
-            const tableDescription = await queryInterface.describeTable('Listings');
-            const hasStepColumn = tableDescription.hasOwnProperty('step');
-            
-            console.log(`Step column exists: ${hasStepColumn}`);
-            
-            // If the column doesn't exist and force=true, add it
-            if (!hasStepColumn && force === 'true') {
-                console.log('Adding missing step column to Listings table...');
-                
-                try {
-                    await queryInterface.addColumn('Listings', 'step', {
-                        type: db.Sequelize.INTEGER,
-                        allowNull: false,
-                        defaultValue: 1
-                    });
-                    console.log('Step column added successfully');
-                } catch (columnError) {
-                    console.error('Error adding step column:', columnError);
-                    return res.status(500).json({
-                        success: false,
-                        error: 'Failed to add step column',
-                        details: columnError.message
-                    });
-                }
-            }
-            
-            return res.json({
-                success: true,
-                message: 'Schema check completed',
-                data: {
-                    hasStepColumn,
-                    columnAdded: !hasStepColumn && force === 'true'
-                }
-            });
-        } catch (error) {
-            console.error('Error checking schema:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to check schema',
-                details: error.message
-            });
-        }
-    },
-
-    // Direct Update for Fallback scenarios
-    directUpdateListing: async (req, res) => {
-        try {
-            const { listingId } = req.params;
-            const updateData = req.body;
-            
-            console.log(`Direct update request for listing ${listingId}:`, JSON.stringify(updateData, null, 2));
-            
-            // First try to find the listing with the ID (including soft-deleted ones)
-            const listing = await Listing.unscoped().findByPk(listingId, { paranoid: false });
-            
-            // If the listing exists, update it
-            if (listing) {
-                console.log(`Found existing listing ${listingId}, updating it`);
-                
-                // If it's soft-deleted, restore it
-                if (listing.deletedAt) {
-                    console.log(`Listing ${listingId} was soft-deleted, restoring it`);
-                    listing.deletedAt = null;
-                }
-                
-                // Handle step updates
-                if (updateData.step) {
-                    listing.step = updateData.step;
-                }
-                
-                // Handle step status updates
-                if (updateData.stepStatus) {
-                    listing.stepStatus = {
-                        ...listing.stepStatus,
-                        ...updateData.stepStatus
-                    };
-                }
-                
-                // Handle location updates
-                if (updateData.location) {
-                    listing.address = updateData.location.address;
-                    listing.coordinates = updateData.location.coordinates;
-                }
-                
-                // Handle basic info updates
-                if (updateData.basicInfo) {
-                    listing.title = updateData.basicInfo.title || listing.title;
-                    listing.description = updateData.basicInfo.description || listing.description;
-                    listing.propertyTypeId = updateData.basicInfo.propertyTypeId || listing.propertyTypeId;
-                    listing.categoryId = updateData.basicInfo.categoryId || listing.categoryId;
-                }
-                
-                // Handle details updates
-                if (updateData.details) {
-                    console.log('Updating listing details:', {
-                        listingId: listing.id,
-                        currentValues: {
-                            bedrooms: listing.bedrooms,
-                            bathrooms: listing.bathrooms,
-                            beds: listing.beds,
-                            accommodates: listing.accommodates,
-                            adultGuests: listing.adultGuests,
-                            childGuests: listing.childGuests
-                        },
-                        newValues: updateData.details
-                    });
-                    
-                    listing.bedrooms = updateData.details.bedrooms || listing.bedrooms;
-                    listing.bathrooms = updateData.details.bathrooms || listing.bathrooms;
-                    listing.beds = updateData.details.beds || listing.beds;
-                    listing.accommodates = updateData.details.accommodates || listing.accommodates;
-                    listing.adultGuests = updateData.details.adultGuests || listing.adultGuests;
-                    listing.childGuests = updateData.details.childGuests !== undefined ? updateData.details.childGuests : listing.childGuests;
-                }
-                
-                // Handle pricing updates
-                if (updateData.pricing) {
-                    listing.pricePerNight = updateData.pricing.pricePerNight || listing.pricePerNight;
-                    listing.cleaningFee = updateData.pricing.cleaningFee || listing.cleaningFee;
-                    listing.securityDeposit = updateData.pricing.securityDeposit || listing.securityDeposit;
-                    listing.minimumNights = updateData.pricing.minimumNights || listing.minimumNights;
-                    listing.maximumNights = updateData.pricing.maximumNights || listing.maximumNights;
-                }
-
-                // --- HANDLE PHOTO OPERATIONS ---
-                if (updateData.deletedPhotoIds && Array.isArray(updateData.deletedPhotoIds)) {
-                    try {
-                        console.log(`Deleting photos with IDs:`, updateData.deletedPhotoIds);
-                        await db.Photo.destroy({
-                            where: {
-                                id: updateData.deletedPhotoIds,
-                                listingId: listingId
-                            },
-                            force: true // Permanent deletion
-                        });
-                        console.log(`Successfully deleted ${updateData.deletedPhotoIds.length} photos`);
-                    } catch (photoError) {
-                        console.error(`Error deleting photos:`, photoError);
-                    }
-                }
-
-                // Handle setting a photo as featured/cover
-                if (updateData.featuredPhotoId) {
-                    try {
-                        console.log(`Setting photo ${updateData.featuredPhotoId} as featured`);
-                        // First, unset all photos as cover
-                        await db.Photo.update(
-                            { isCover: false },
-                            { 
-                                where: { listingId: listingId },
-                                silent: true
-                            }
-                        );
-                        
-                        // Then set the selected photo as cover - using string ID comparison
-                        const photoToUpdate = await db.Photo.findOne({
-                            where: { 
-                                id: updateData.featuredPhotoId,
-                                listingId: listingId
-                            }
-                        });
-                        
-                        if (photoToUpdate) {
-                            await photoToUpdate.update({ isCover: true });
-                            console.log(`Successfully set photo ${updateData.featuredPhotoId} as featured`);
-                        } else {
-                            console.error(`Photo ${updateData.featuredPhotoId} not found for listing ${listingId}`);
-                        }
-                    } catch (featuredError) {
-                        console.error(`Error setting featured photo:`, featuredError);
-                    }
-                }
-
-                // Handle updating all photos in one operation
-                if (updateData.photos && Array.isArray(updateData.photos) && updateData.updateAllPhotos) {
-                    try {
-                        console.log(`Updating all photos for listing ${listingId}`);
-                        
-                        // Process each photo individually instead of bulk operations
-                        // First, find all existing photos
-                        const existingPhotos = await db.Photo.findAll({
-                            where: {
-                                listingId: listingId
-                            }
-                        });
-                        
-                        // Get IDs of photos in the update request
-                        const newPhotoIds = updateData.photos.map(p => p.id);
-                        console.log('New photo IDs:', newPhotoIds);
-                        
-                        // Find photos to delete (photos that exist but aren't in the update)
-                        const photosToDelete = existingPhotos.filter(
-                            existingPhoto => !newPhotoIds.includes(existingPhoto.id.toString())
-                        );
-                        
-                        // Delete photos that aren't in the update
-                        if (photosToDelete.length > 0) {
-                            for (const photoToDelete of photosToDelete) {
-                                await photoToDelete.destroy({ force: true });
-                            }
-                            console.log(`Deleted ${photosToDelete.length} photos`);
-                        }
-                        
-                        // Then update each photo's data
-                        for (const photo of updateData.photos) {
-                            if (photo.id) {
-                                const existingPhoto = await db.Photo.findOne({
-                                    where: { 
-                                        id: photo.id,
-                                        listingId: listingId
-                                    }
-                                });
-                                
-                                if (existingPhoto) {
-                                    await existingPhoto.update({
-                                        isCover: !!photo.isCover,
-                                        caption: photo.caption || '',
-                                        displayOrder: photo.displayOrder || 0
-                                    });
-                                } else if (photo.file) {
-                                    // This is a new photo being added
-                                    // Convert blob URL to a proper URL format using our helper
-                                    const photoUrl = generatePhotoUrl(photo.url, photo.id);
-                                    
-                                    await db.Photo.create({
-                                        id: photo.id, // Ensure we use the provided ID
-                                        listingId: listingId,
-                                        url: photoUrl,
-                                        isCover: !!photo.isCover,
-                                        caption: photo.caption || '',
-                                        displayOrder: photo.displayOrder || 0,
-                                        fileType: 'image/jpeg', // Default
-                                        fileSize: 1024 // Default size in bytes
-                                    });
-                                }
-                            }
-                        }
-                        console.log(`Photo updates completed`);
-                    } catch (photoUpdateError) {
-                        console.error(`Error updating photos:`, photoUpdateError);
-                    }
-                }
-                // --- END PHOTO OPERATIONS ---
-
-                // --- FORCE STATUS UPDATE ---
-                if (updateData.listingData && updateData.listingData.status) {
-                    listing.status = updateData.listingData.status;
-                } else if (updateData.status) {
-                    listing.status = updateData.status;
-                }
-                // --- END FORCE STATUS UPDATE ---
-                
-                // Add rules handling to directUpdateListing
-                if (updateData.rules && Array.isArray(updateData.rules)) {
-                    try {
-                        console.log(`Processing ${updateData.rules.length} rules for listing ${listingId}`);
-                        
-                        // First, delete any existing rules
-                        await db.PropertyRule.destroy({
-                            where: { listingId },
-                            force: true // Hard delete
-                        });
-                        
-                        // Then create the new rules one by one with validation disabled
-                        for (let i = 0; i < updateData.rules.length; i++) {
-                            const ruleData = updateData.rules[i];
-                            try {
-                                // Clean and validate the rule data
-                                const cleanRule = {
-                                    listingId,
-                                    type: ruleData.type || 'other',
-                                    title: ruleData.title || 'House Rule',
-                                    description: ruleData.description || '',
-                                    isAllowed: ruleData.isAllowed !== false, // Default to true
-                                    isActive: true,
-                                    displayOrder: i,
-                                };
-                                
-                                await db.PropertyRule.create(cleanRule, { validate: false });
-                                console.log(`Created rule ${i+1}/${updateData.rules.length} for listing ${listingId}`);
-                            } catch (ruleError) {
-                                console.error(`Error creating rule ${i+1}:`, ruleError.message);
-                                // Continue with next rule
-                            }
-                        }
-                        
-                        // Update step status to mark rules as complete
-                        if (listing) {
-                            const stepStatus = listing.stepStatus || {};
-                            await listing.update({
-                                stepStatus: {
-                                    ...stepStatus,
-                                    rules: true
-                                }
-                            }, { validate: false });
-                        }
-                        
-                        console.log(`Successfully processed rules for listing ${listingId}`);
-                    } catch (rulesError) {
-                        console.error(`Error processing rules:`, rulesError);
-                        // Continue with other updates
-                    }
-                }
-                
-                // Save all changes, bypassing validation
-                await listing.save({ validate: false });
-                
-                console.log(`Direct update successful for listing ${listingId}`);
-                return res.json({
-                    success: true,
-                    message: 'Listing updated successfully',
-                    data: listing
-                });
-            } 
-            
-            // If the listing doesn't exist and createIfMissing is true, create a new one
-            if (updateData.createIfMissing && updateData.basicInfo) {
-                console.log(`Listing ${listingId} not found, creating a new one`);
-                
-                // Instead of creating with a specific ID (which can cause PK constraint issues),
-                // let the database auto-generate the ID
-                try {
-                    // Create a new listing with auto-generated ID
-                    const newListing = await Listing.create({
-                        hostId: req.user.id,
-                        title: updateData.basicInfo.title || 'Untitled Listing',
-                        description: updateData.basicInfo.description || 'No description provided',
-                        propertyTypeId: updateData.basicInfo.propertyTypeId || 1,
-                        status: 'draft',
-                        isActive: true,
-                        stepStatus: {
-                            basicInfo: true,
-                            location: false,
-                            details: false,
-                            pricing: false,
-                            photos: false,
-                            rules: false,
-                            calendar: false,
-                        },
-                        ...updateData.listingData
-                    });
-                    
-                    // Also apply any other updates that were sent
-                    if (updateData.location) {
-                        await newListing.update({
-                            address: updateData.location.address,
-                            coordinates: updateData.location.coordinates,
-                            stepStatus: {
-                                ...newListing.stepStatus,
-                                location: true
-                            }
-                        });
-                    }
-                    
-                    if (updateData.details) {
-                        await newListing.update({
-                            bedrooms: updateData.details.bedrooms || 1,
-                            bathrooms: updateData.details.bathrooms || 1,
-                            beds: updateData.details.beds || 1,
-                            accommodates: updateData.details.accommodates || 2,
-                            adultGuests: updateData.details.adultGuests || 1,
-                            childGuests: updateData.details.childGuests || 0,
-                            stepStatus: {
-                                ...newListing.stepStatus,
-                                details: true
-                            }
-                        });
-                    }
-                    
-                    console.log(`Created new listing with ID ${newListing.id} instead of requested ${listingId}`);
-                    return res.status(201).json({
-                        success: true,
-                        message: 'Created new listing with different ID',
-                        data: newListing,
-                        originalRequestedId: listingId
-                    });
-                } catch (createError) {
-                    console.error(`Failed to create listing:`, createError);
-                    return res.status(500).json({
-                        success: false,
-                        error: 'Failed to create listing',
-                        details: createError.message
-                    });
-                }
-            }
-            
-            // If we get here, the listing doesn't exist and we don't want to create a new one
-            return res.status(404).json({
-                success: false,
-                error: 'Listing not found'
-            });
-            
-        } catch (error) {
-            console.error('Error in direct update:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to perform direct update',
-                details: error.message
-            });
-        }
-    },
-
-    // First implementation - getSingleListing
-    getSingleListing: async (req, res) => {
-        try {
-            const { listingId } = req.params;
-            console.log('⚡ Fetching listing with ID:', listingId);
-            console.log('⚡ Query conditions:', { 
-                id: listingId,
-                isActive: true 
-            });
-
-            // Find the listing with all its related data
-            const listing = await Listing.findOne({
-                where: { 
-                    id: listingId,
-                    isActive: true
-                },
-                include: [
-                    {
-                        model: Photo,
-                        as: 'photos',
-                        attributes: ['id', 'url', 'isCover', 'caption']
-                    },
-                    {
-                        model: PropertyType,
-                        as: 'propertyType',
-                        attributes: ['id', 'name', 'icon']
-                    },
-                    {
-                        model: Location,
-                        as: 'locationDetails',
-                        attributes: ['id', 'name', 'description']
-                    },
-                    {
-                        model: PropertyRule,
-                        as: 'propertyRules',
-                        attributes: ['id', 'title', 'description', 'isAllowed']
-                    },
-                    {
-                        model: Amenity,
-                        as: 'amenities',
-                        attributes: ['id', 'name', 'description', 'icon']
-                    },
-                    {
-                        model: Category,
-                        as: 'category',
-                        attributes: ['id', 'name', 'description']
-                    },
-                    {
-                        model: User,
-                        as: 'host',
-                        attributes: ['id', 'name', 'email'],
-                        include: [{
-                            model: HostProfile,
-                            as: 'hostProfile',
-                            attributes: ['id', 'displayName', 'bio', 'responseRate', 'responseTime']
-                        }]
-                    }
-                ],
-                raw: true,
-                nest: true
-            });
-
-            if (!listing) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Listing not found'
-                });
-            }
-
-            // Handle view count separately to avoid circular references
-            if (req.user?.id !== listing.hostId) {
-                try {
-                    await ViewCount.create({
-                        entityType: 'listing',
-                        entityId: listing.id,
-                        userId: req.user?.id || null,
-                        ipAddress: req.ip,
-                        userAgent: req.headers['user-agent']
-                    });
-                } catch (viewError) {
-                    console.error('Error recording view:', viewError);
-                    // Continue execution even if view count fails
-                }
-            }
-
-            // Clean up the response data
-            const responseData = {
-                ...listing,
-                isOwner: req.user?.id === listing.hostId,
-                host: listing.host ? {
-                    id: listing.host.id,
-                    name: listing.host.name,
-                    hostProfile: listing.host.hostProfile
-                } : null
-            };
-
-            res.json({
-                success: true,
-                data: responseData
-            });
-
-        } catch (error) {
-            console.error('Error fetching listing:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to fetch listing details'
-            });
-        }
-    },
-
-    // Toggle listing status (activate/deactivate)
-    toggleListingStatus: async (req, res) => {
-        try {
-            const { listingId } = req.params;
-            const { status } = req.body; // Expected: 'active' or 'inactive'
-
-            // Input validation
-            if (!['active', 'inactive'].includes(status)) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Invalid status. Must be either "active" or "inactive"'
-                });
-            }
-
-            // Find the listing and verify ownership
-            const listing = await Listing.findOne({
-                where: { 
-                    id: listingId,
-                    hostId: req.user.id // Ensure the user owns this listing
-                }
-            });
-
-            // Check if listing exists and user has permission
-            if (!listing) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Listing not found or you do not have permission to modify it'
-                });
-            }
-
-            // Check if listing is in published state
-            if (listing.status !== 'published') {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Only published listings can be activated/deactivated'
-                });
-            }
-
-            // Update the listing status
-            await listing.update({
-                isActive: status === 'active',
-                updatedAt: new Date()
-            });
-
-            // Return success response
-            res.json({
-                success: true,
-                message: `Listing successfully ${status === 'active' ? 'activated' : 'deactivated'}`,
-                data: {
-                    id: listing.id,
-                    status: status,
-                    isActive: status === 'active',
-                    updatedAt: listing.updatedAt
-                }
-            });
-
-        } catch (error) {
-            console.error('Error toggling listing status:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to update listing status'
-            });
-        }
-    },
-
-    // Delete a specific photo from a listing
-    deletePhoto: async (req, res) => {
-        try {
-            const { listingId, photoId } = req.params;
-            console.log(`Controller: Deleting photo ${photoId} from listing ${listingId}`);
-            
-            // Verify listing ownership
-            const listing = await Listing.findOne({
-                where: {
-                    id: listingId,
-                    hostId: req.user.id
-                }
-            });
-            
-            if (!listing) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Listing not found or not authorized'
-                });
-            }
-            
-            // Check if the photo exists
-            const photo = await db.Photo.findOne({
-                where: {
-                    id: photoId,
-                    listingId: listingId
-                }
-            });
-            
-            if (!photo) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Photo not found or already deleted'
-                });
-            }
-            
-            // Check if this is the cover photo
-            const isCover = photo.isCover;
-            
-            // Delete the photo
-            await photo.destroy({ force: true });
-            console.log(`Photo ${photoId} deleted from listing ${listingId}`);
-            
-            // If the deleted photo was the cover/featured photo, 
-            // set the first remaining photo as the new cover
-            if (isCover) {
-                const remainingPhotos = await db.Photo.findAll({
-                    where: { listingId: listingId },
-                    order: [['displayOrder', 'ASC']]
-                });
-                
-                if (remainingPhotos.length > 0) {
-                    await remainingPhotos[0].update({ isCover: true });
-                    console.log(`Photo ${remainingPhotos[0].id} set as new cover photo`);
-                }
-            }
-            
-            // Return success
-            return res.json({
-                success: true,
-                message: 'Photo deleted successfully'
-            });
-        } catch (error) {
-            console.error('Error deleting photo:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to delete photo',
-                details: error.message
-            });
-        }
-    },
-
-    // Get all listings for the authenticated host
-    getHostListings: async (req, res) => {
-        try {
-            const {
-                page = 1,
-                limit = 10,
-                status,
-                propertyType,
-                priceRange,
-                bedrooms,
-                searchTerm,
-                sortBy = 'createdAt',
-                sortOrder = 'DESC'
-            } = req.query;
-
-            // Build base query options
-            const queryOptions = {
-                where: {
-                    hostId: req.user.id // Only get listings for the authenticated host
-                },
-                include: [
-                    {
-                        model: Photo,
-                        as: 'photos',
-                        attributes: ['id', 'url', 'isCover'],
-                        where: { isCover: true },
-                        required: false
-                    },
-                    {
-                        model: PropertyType,
-                        as: 'propertyType',
-                        attributes: ['id', 'name', 'icon']
-                    },
-                    {
-                        model: Location,
-                        as: 'locationDetails',
-                        attributes: ['id', 'name', 'address', 'city', 'state', 'country']
-                    },
-                    {
-                        model: db.Booking,
-                        as: 'bookings',
-                        attributes: [
-                            [db.sequelize.fn('COUNT', db.sequelize.col('bookings.id')), 'totalBookings'],
-                            [db.sequelize.fn('SUM', 
-                                db.sequelize.literal("CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END")), 
-                            'confirmedBookings']
-                        ],
-                        required: false
-                    }
-                ],
-                group: ['Listings.id', 'photos.id', 'propertyType.id', 'locationDetails.id'],
-                order: [[sortBy, sortOrder]],
-                limit: parseInt(limit),
-                offset: (parseInt(page) - 1) * parseInt(limit),
-                distinct: true // Important for correct count with includes
-            };
-
-            // Add filters if provided
-            if (status && status.length > 0) {
-                queryOptions.where.status = { [Op.in]: status };
-            }
-
-            if (propertyType && propertyType.length > 0) {
-                queryOptions.where.propertyTypeId = { [Op.in]: propertyType };
-            }
-
-            if (priceRange) {
-                const [minPrice, maxPrice] = priceRange.split(',').map(Number);
-                if (!isNaN(minPrice)) {
-                    queryOptions.where.pricePerNight = { [Op.gte]: minPrice };
-                }
-                if (!isNaN(maxPrice)) {
-                    queryOptions.where.pricePerNight = { 
-                        ...queryOptions.where.pricePerNight,
-                        [Op.lte]: maxPrice 
-                    };
-                }
-            }
-
-            if (bedrooms) {
-                queryOptions.where.bedrooms = { [Op.gte]: parseInt(bedrooms) };
-            }
-
-            if (searchTerm) {
-                queryOptions.where[Op.or] = [
-                    { title: { [Op.iLike]: `%${searchTerm}%` } },
-                    { description: { [Op.iLike]: `%${searchTerm}%` } },
-                    { '$locationDetails.address$': { [Op.iLike]: `%${searchTerm}%` } },
-                    { '$locationDetails.city$': { [Op.iLike]: `%${searchTerm}%` } }
-                ];
-            }
-
-            // Get listings and total count
-            const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
-
-            // Calculate listing statistics
-            const statistics = {
-                total: count,
-                published: listings.filter(l => l.status === 'published').length,
-                draft: listings.filter(l => l.status === 'draft').length,
-                active: listings.filter(l => l.isActive).length,
-                inactive: listings.filter(l => !l.isActive).length
-            };
-
-            // Format the response
-            const formattedListings = listings.map(listing => ({
-                ...listing.toJSON(),
-                bookingStats: {
-                    total: parseInt(listing.bookings?.[0]?.totalBookings || 0),
-                    confirmed: parseInt(listing.bookings?.[0]?.confirmedBookings || 0)
-                },
-                // Remove unnecessary booking data from response
-                bookings: undefined
-            }));
-
-            res.json({
-                success: true,
-                data: {
-                    listings: formattedListings,
-                    statistics,
-                    pagination: {
-                        total: count,
-                        page: parseInt(page),
-                        limit: parseInt(limit),
-                        totalPages: Math.ceil(count / parseInt(limit))
-                    }
-                }
-            });
-
-        } catch (error) {
-            console.error('Error fetching host listings:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to fetch host listings'
-            });
-        }
-    },
-
-    getCategories: async (req, res) => {
-        try {
-            const categories = await Category.findAll({
-                attributes: ['id', 'name', 'description', 'icon', 'slug'],
-                order: [['name', 'ASC']],
-                where: { isActive: true }  // Only get active categories
-            });
-            
-            res.json({
-                success: true,
-                data: categories
-            });
-        } catch (error) {
-            console.error('Error fetching categories:', error);
-            res.status(500).json({
-                success: false,
-                error: 'Failed to fetch categories'
-            });
-        }
-    },
-
-    // Set a photo as featured/cover image
-    setPhotoAsFeatured: async (req, res) => {
-        try {
-            const { listingId, photoId } = req.params;
-            console.log(`Setting photo ${photoId} as featured for listing ${listingId}`);
-            
-            // Verify listing ownership
-            const listing = await Listing.findOne({
-                where: {
-                    id: listingId,
-                    hostId: req.user.id
-                }
-            });
-            
-            if (!listing) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Listing not found or not authorized'
-                });
-            }
-            
-            // Verify photo exists and belongs to the listing
-            const photo = await Photo.findOne({
-                where: {
-                    id: photoId,
-                    listingId: listingId
-                }
-            });
-            
-            if (!photo) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Photo not found or does not belong to this listing'
-                });
-            }
-            
-            // Begin transaction to update all photos atomically
-            await db.sequelize.transaction(async (t) => {
-                // First, get all photos to update
-                const allPhotos = await Photo.findAll({
-                    where: { listingId },
-                    transaction: t
-                });
-                
-                // Update each photo individually to ensure proper handling of string IDs
-                for (const p of allPhotos) {
-                    await p.update(
-                        { isCover: false },
-                        { transaction: t }
-                    );
-                }
-                
-                // Then set the selected photo as cover
-                await photo.update(
-                    { isCover: true },
-                    { transaction: t }
-                );
-            });
-            
-            // Get all updated photos to return in response
-            const photos = await Photo.findAll({
-                where: { listingId },
-                order: [['displayOrder', 'ASC']]
-            });
-            
-            return res.json({
-                success: true,
-                message: 'Featured photo updated successfully',
-                data: {
-                    photos: photos.map(p => ({
-                        id: p.id,
-                        url: p.url,
-                        isCover: p.isCover,
-                        caption: p.caption || '',
-                        displayOrder: p.displayOrder || 0
-                    }))
-                }
-            });
-        } catch (error) {
-            console.error('Error setting featured photo:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to update featured photo',
-                details: error.message
-            });
-        }
-    },
-
-    // Force update a listing's status (emergency method)
-    forceUpdateStatus: async (req, res) => {
-        try {
-            const { listingId } = req.params;
-            const { status, forceUpdate } = req.body;
-            
-            console.log(`EMERGENCY: Force updating listing ${listingId} status to ${status}, requested by user ${req.user?.id}`);
-            
-            if (!status) {
-                return res.status(400).json({
-                    success: false,
-                    error: 'Status is required'
-                });
-            }
-            
-            // Find the listing
-            const listing = await Listing.findOne({
-                where: {
-                    id: listingId,
-                    hostId: req.user.id
-                }
-            });
-            
-            if (!listing) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Listing not found or you are not authorized'
-                });
-            }
-            
-            // Force update the status directly, bypassing normal validation
-            await listing.update({ 
-                status: status,
-            }, {
-                // Skip validation if forceUpdate is true
-                validate: !forceUpdate 
-            });
-            
-            return res.json({
-                success: true,
-                message: `Listing status forcefully updated to ${status}`,
-                data: {
-                    id: listing.id,
-                    status: status
-                }
-            });
-        } catch (error) {
-            console.error('Emergency status update failed:', error);
-            return res.status(500).json({
-                success: false,
-                error: 'Failed to force update listing status',
-                details: error.message
-            });
-        }
-    },
-    getOneListing: async (req, res) => {
-        try {
-            const { listingId } = req.params;
-            
-            const listing = await db.Listing.findByPk(listingId, {
-                include: [
-                    // User (host) information with expanded attributes
-                    {
-                        model: db.User,
-                        as: 'host',
-                        include: [{
-                            model: db.HostProfile,
-                            as: 'hostProfile',
-                            attributes: ['id', 'displayName', 'bio', 'profilePicture', 'phoneNumber', 'isSuperhost','superhostSince']
-                        }]
-                    },
-                    // Property Type information
-                    {
-                        model: db.PropertyType,
-                        as: 'propertyType',
-                    },
-                    {
-                        model: db.RoomType,
-                        as: 'roomType',
-                        required: false,
-                        attributes: ['id', 'name', 'description', 'icon']
-                    },
-                    // Category information
-                    {
-                        model: db.Category,
-                        as: 'category',
-                        required: false,
-                        attributes: ['id', 'name', 'description', 'icon']
-                    },
-                    // Photos
-                    {
-                        model: db.Photo,
-                        as: 'photos',
-                        required: false
-                    },
-                    // Amenities
-                    {
-                        model: db.Amenity,
-                        as: 'amenities',
-                        through: { attributes: [] } // Exclude junction table attributes
-                    },
-                    // Property Rules
-                    {
-                        model: db.PropertyRule,
-                        as: 'propertyRules',
-                    },
-                    // Location details
-                    {
-                        model: db.Location,
-                        as: 'locationDetails',
-                    }
-                ],
-                attributes: {
-                    exclude: ['deletedAt', 'createdAt', 'updatedAt']
-                }
-            });
-
-            if (!listing) {
-                return res.status(404).json({
-                    success: false,
-                    error: 'Listing not found'
-                });
-            }
-
             res.json({
                 success: true,
                 data: listing
@@ -4041,8 +2938,731 @@ const listingController = {
                 details: error.message
             });
         }
-    }
-    
+    },
+
+    // Search for toggleListingStatus and add this right after it
+    /**
+     * Toggle listing visibility (public/private)
+     * Changes isPublic between true/false
+     */
+    toggleListingVisibility: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            const userId = req.user.id;
+                
+            console.log(`Attempting to toggle visibility for listing ${listingId} by user ${userId}`);
+            
+            // Find listing by ID
+            const listing = await Listing.unscoped().findByPk(listingId);
+
+            if (!listing) {
+                console.log(`Listing ${listingId} not found`);
+                return res.status(404).json({
+                        success: false,
+                    error: 'Listing not found'
+                });
+            }
+
+            // Ensure user is the host of this listing
+            if (listing.hostId !== userId) {
+                console.log(`User ${userId} is not authorized to modify listing ${listingId}`);
+                return res.status(403).json({
+                success: false,
+                    error: 'Unauthorized: You are not the host of this listing'
+                });
+            }
+
+            // Get current visibility state
+            const currentVisibility = !!listing.isPublic;
+            // Toggle isPublic status - explicitly set the opposite boolean value
+            const updatedVisibility = !currentVisibility;
+            
+            console.log(`Toggling listing ${listingId} visibility from ${currentVisibility} to ${updatedVisibility}`);
+            
+            // Use raw SQL update as a fallback approach to ensure the update happens
+            try {
+                // First try the Sequelize approach
+                await listing.update({ isPublic: updatedVisibility });
+                console.log(`Updated listing ${listingId} isPublic to ${updatedVisibility} with Sequelize`);
+                
+                // Verify the update was successful
+                const verifyListing = await Listing.unscoped().findByPk(listingId);
+                
+                if (verifyListing.isPublic !== updatedVisibility) {
+                    console.log(`Update verification failed, using raw SQL fallback`);
+                    // If Sequelize update didn't work, try raw SQL
+                    await db.sequelize.query(
+                        `UPDATE "Listings" SET "isPublic" = $1, "updatedAt" = NOW() WHERE id = $2`,
+                        {
+                            bind: [updatedVisibility, listingId],
+                            type: db.sequelize.QueryTypes.UPDATE
+                        }
+                    );
+                    console.log(`Updated listing ${listingId} isPublic to ${updatedVisibility} with raw SQL`);
+                }
+            } catch (updateError) {
+                console.error(`Error updating listing visibility:`, updateError);
+                // Last resort - try direct SQL update
+                await db.sequelize.query(
+                    `UPDATE "Listings" SET "isPublic" = $1, "updatedAt" = NOW() WHERE id = $2`,
+                    {
+                        bind: [updatedVisibility, listingId],
+                        type: db.sequelize.QueryTypes.UPDATE
+                    }
+                );
+                console.log(`Updated listing ${listingId} isPublic to ${updatedVisibility} with direct SQL (error fallback)`);
+            }
+            
+            return res.status(200).json({
+                success: true,
+                message: `Listing is now ${updatedVisibility ? 'public' : 'private'}`,
+                data: {
+                    id: listing.id,
+                    isPublic: updatedVisibility
+                }
+            });
+        } catch (error) {
+            console.error('Error toggling listing visibility:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to toggle listing visibility',
+                details: error.message
+            });
+        }
+    },
+
+    // Toggle listing status (activate/deactivate)
+    toggleListingStatus: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            
+            // Find listing by ID
+            const listing = await Listing.unscoped().findByPk(listingId);
+
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'Listing not found'
+                });
+            }
+
+            // Ensure user is the host of this listing
+            if (listing.hostId !== req.user.id) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'Unauthorized: You are not the host of this listing'
+                });
+            }
+
+            // Toggle isActive status
+            const updatedStatus = !listing.isActive;
+            
+            await listing.update({ isActive: updatedStatus });
+            
+            return res.status(200).json({
+                        success: true,
+                message: `Listing is now ${updatedStatus ? 'active' : 'inactive'}`,
+                data: {
+                    id: listing.id,
+                    isActive: updatedStatus
+                }
+            });
+        } catch (error) {
+            console.error('Error toggling listing status:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to toggle listing status',
+                details: error.message
+            });
+        }
+    },
+
+    // Force update listing status (emergency method)
+    forceUpdateStatus: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            const { status } = req.body;
+            
+            // Validate status
+            if (!['draft', 'published', 'archived'].includes(status)) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid status. Must be draft, published, or archived'
+                });
+            }
+            
+            // Find listing and verify ownership
+            const listing = await Listing.unscoped().findOne({
+                where: { 
+                    id: listingId,
+                    hostId: req.user.id
+                }
+            });
+
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or not authorized'
+                });
+            }
+            
+            // Update status
+            await listing.update({ status });
+            
+            return res.json({
+                success: true,
+                message: `Listing status updated to ${status}`,
+                data: {
+                    id: listing.id,
+                    status: listing.status
+                }
+            });
+        } catch (error) {
+            console.error('Error forcing listing status update:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update listing status',
+                details: error.message
+            });
+        }
+    },
+
+    // Direct update listing (for emergency fixes)
+    directUpdateListing: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            const updateData = req.body;
+            
+            console.log(`Direct update for listing ${listingId}:`, JSON.stringify(updateData, null, 2));
+            
+            // Find listing and verify ownership
+            const listing = await Listing.unscoped().findOne({
+                where: { 
+                    id: listingId,
+                    hostId: req.user.id
+                }
+            });
+                                
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or not authorized'
+                });
+            }
+            
+            // Prepare update object
+            const updateObj = {};
+            
+            // Handle special fields first
+            if (updateData.stepStatus) {
+                updateObj.stepStatus = {
+                    ...listing.stepStatus,
+                    ...updateData.stepStatus
+                };
+            }
+            
+            // Handle details object if present
+            if (updateData.details && typeof updateData.details === 'object') {
+                Object.entries(updateData.details).forEach(([key, value]) => {
+                    updateObj[key] = value;
+                });
+                console.log('Applied details update:', updateData.details);
+            }
+            
+            // Handle pricing object if present
+            if (updateData.pricing && typeof updateData.pricing === 'object') {
+                Object.entries(updateData.pricing).forEach(([key, value]) => {
+                    updateObj[key] = value;
+                });
+                console.log('Applied pricing update:', updateData.pricing);
+            }
+            
+            // Add all other flat fields
+            for (const [key, value] of Object.entries(updateData)) {
+                // Skip fields we've already handled and nested objects
+                if (key !== 'stepStatus' && key !== 'listingData' && 
+                    key !== 'details' && key !== 'pricing' && 
+                    typeof value !== 'object') {
+                    updateObj[key] = value;
+                }
+            }
+            
+            // Special handling for listingData object
+            if (updateData.listingData) {
+                for (const [key, value] of Object.entries(updateData.listingData)) {
+                    if (typeof value !== 'object') {
+                        updateObj[key] = value;
+                    }
+                }
+            }
+
+            // --- FORCE STATUS UPDATE ---
+            if (updateData.listingData && updateData.listingData.status) {
+                listing.status = updateData.listingData.status;
+                updateObj.status = updateData.listingData.status;
+            } else if (updateData.status) {
+                listing.status = updateData.status;
+                updateObj.status = updateData.status;
+            }
+            
+            // Handle visibility update
+            if (updateData.isPublic !== undefined) {
+                listing.isPublic = Boolean(updateData.isPublic);
+                updateObj.isPublic = Boolean(updateData.isPublic);
+            }
+            // --- END FORCE STATUS UPDATE ---
+            
+            console.log(`Updating listing with:`, JSON.stringify(updateObj, null, 2));
+            
+            if (Object.keys(updateObj).length === 0) {
+                console.warn('Warning: Empty update object, no changes will be made');
+                return res.json({
+                    success: true,
+                    message: 'No changes to apply',
+                    data: {
+                        id: listing.id,
+                        status: listing.status
+                    }
+                });
+            }
+            
+            // Update the listing
+            try {
+                await listing.update(updateObj);
+                console.log(`Successfully updated listing ${listingId} with Sequelize`);
+            } catch (updateError) {
+                console.error('Error updating with Sequelize:', updateError);
+                
+                // If Sequelize update fails, try direct SQL for critical fields
+                const criticalFields = ['bedrooms', 'bathrooms', 'beds', 'accommodates', 
+                                       'adultGuests', 'childGuests', 'pricePerNight', 
+                                       'cleaningFee', 'securityDeposit', 'minimumNights', 'maximumNights'];
+                
+                for (const field of criticalFields) {
+                    if (updateObj[field] !== undefined) {
+                        try {
+                            await db.sequelize.query(
+                                `UPDATE "Listings" SET "${field}" = $1 WHERE id = $2`,
+                                {
+                                    bind: [updateObj[field], listingId],
+                                    type: db.sequelize.QueryTypes.UPDATE
+                                }
+                            );
+                            console.log(`Updated field ${field} to ${updateObj[field]} with direct SQL`);
+                        } catch (sqlError) {
+                            console.error(`Failed to update ${field}:`, sqlError);
+                        }
+                    }
+                }
+            }
+            
+            // Fetch the updated listing to verify changes
+            const updatedListing = await Listing.unscoped().findByPk(listingId);
+            
+            return res.json({
+                success: true,
+                message: 'Listing updated successfully',
+                data: {
+                    id: updatedListing.id,
+                    status: updatedListing.status,
+                    ...Object.keys(updateObj).reduce((acc, key) => {
+                        acc[key] = updatedListing[key];
+                        return acc;
+                    }, {})
+                }
+            });
+        } catch (error) {
+            console.error('Error direct updating listing:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update listing',
+                details: error.message
+            });
+        }
+    },
+
+    // Utility route for checking and fixing schema issues
+    checkAndFixSchema: async (req, res) => {
+        try {
+            console.log('Running schema check and fix...');
+            
+            // Check for listings missing required fields
+            const incompleteListings = await Listing.unscoped().findAll({
+                where: {
+                    [Op.or]: [
+                        { stepStatus: null },
+                        { isActive: null },
+                        { pricePerNight: null }
+                    ]
+                }
+            });
+            
+            console.log(`Found ${incompleteListings.length} incomplete listings`);
+            
+            // Fix incomplete listings
+            for (const listing of incompleteListings) {
+                // Default values
+                const updates = {
+                    stepStatus: listing.stepStatus || {
+                        basicInfo: false,
+                            location: false,
+                            details: false,
+                            pricing: false,
+                            photos: false,
+                        amenities: false,
+                            rules: false,
+                        calendar: false
+                    },
+                    isActive: listing.isActive ?? true,
+                    pricePerNight: listing.pricePerNight || 100
+                };
+                
+                await listing.update(updates);
+                console.log(`Fixed listing ${listing.id}`);
+            }
+            
+            return res.json({
+                        success: true,
+                message: 'Schema check completed',
+                data: {
+                    fixedListings: incompleteListings.map(l => l.id)
+                }
+            });
+        } catch (error) {
+            console.error('Error in schema check:', error);
+            return res.status(500).json({
+                    success: false,
+                error: 'Schema check failed',
+                details: error.message
+            });
+        }
+    },
+
+    // Get single listing by ID (simplified for frontend)
+    getOneListing: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            
+            // Find the listing with basic information
+            const listing = await Listing.findByPk(listingId, {
+                include: [
+                    {
+                        model: db.Photo,
+                        as: 'photos',
+                        attributes: ['id', 'url', 'isCover', 'caption'],
+                        required: false
+                    },
+                    {
+                        model: db.Location,
+                        as: 'locationDetails',
+                        attributes: ['id', 'name', 'slug'],
+                        required: false
+                    }
+                ]
+            });
+
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found'
+                });
+            }
+
+            // Return the listing
+            return res.json({
+                success: true,
+                data: listing
+            });
+        } catch (error) {
+            console.error('Error fetching listing:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to fetch listing',
+                details: error.message
+            });
+        }
+    },
+
+    // Get all listings for a specific host
+    getHostListings: async (req, res) => {
+        try {
+            const {
+                page = 1,
+                limit = 10,
+                sortBy = 'createdAt',
+                sortOrder = 'DESC',
+                status,
+                propertyType,
+                priceRange,
+                bedrooms,
+                searchTerm
+            } = req.query;
+
+            console.log(`Fetching listings for host ${req.user.id} with filters:`, req.query);
+            
+            // Build the query options
+            const queryOptions = {
+                where: {
+                    hostId: req.user.id
+                },
+                include: [
+                    {
+                        model: db.Photo,
+                        as: 'photos',
+                        where: { isCover: true },
+                        required: false
+                    },
+                    {
+                        model: db.Location,
+                        as: 'locationDetails',
+                        attributes: ['id', 'name', 'slug'],
+                        required: false
+                    },
+                    {
+                        model: db.Category,
+                        as: 'category',
+                        attributes: ['id', 'name', 'slug'],
+                        required: false
+                    },
+                    {
+                        model: db.PropertyType,
+                        as: 'propertyType',
+                        attributes: ['id', 'name', 'icon'],
+                        required: false
+                    }
+                ],
+                order: [[sortBy, sortOrder]],
+                limit: parseInt(limit),
+                offset: (parseInt(page) - 1) * parseInt(limit)
+            };
+            
+            // Apply filters if provided
+            if (status) {
+                queryOptions.where.status = status;
+            }
+            
+            if (propertyType) {
+                queryOptions.where.propertyTypeId = propertyType;
+            }
+
+            if (priceRange) {
+                const [minPrice, maxPrice] = priceRange.split('-').map(price => parseFloat(price.trim()));
+                if (!isNaN(minPrice)) {
+                    queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.gte]: minPrice };
+                }
+                if (!isNaN(maxPrice)) {
+                    queryOptions.where.pricePerNight = { ...queryOptions.where.pricePerNight, [Op.lte]: maxPrice };
+                }
+            }
+
+            if (bedrooms) {
+                queryOptions.where.bedrooms = parseInt(bedrooms);
+            }
+
+            if (searchTerm) {
+                queryOptions.where[Op.or] = [
+                    { title: { [Op.iLike]: `%${searchTerm}%` } },
+                    { description: { [Op.iLike]: `%${searchTerm}%` } }
+                ];
+            }
+            
+            // Use unscoped to get all listings regardless of status or isActive
+            const { count, rows: listings } = await Listing.unscoped().findAndCountAll(queryOptions);
+            
+            // Group listings by status for statistics
+            const statusCounts = {
+                draft: 0,
+                published: 0,
+                archived: 0,
+                total: count
+            };
+            
+            listings.forEach(listing => {
+                if (statusCounts[listing.status] !== undefined) {
+                    statusCounts[listing.status]++;
+                }
+            });
+            
+            // Calculate visibility statistics
+            const visibilityCounts = {
+                public: listings.filter(listing => listing.isPublic).length,
+                private: listings.filter(listing => !listing.isPublic).length
+            };
+            
+            return res.json({
+                success: true,
+                data: {
+                    listings,
+                    pagination: {
+                        total: count,
+                        page: parseInt(page),
+                        limit: parseInt(limit),
+                        totalPages: Math.ceil(count / parseInt(limit))
+                    },
+                    stats: {
+                        status: statusCounts,
+                        visibility: visibilityCounts
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error fetching host listings:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to fetch host listings',
+                details: error.message
+            });
+        }
+    },
+
+    // Direct update details and pricing (specialized method)
+    directUpdateDetailsAndPricing: async (req, res) => {
+        try {
+            const { listingId } = req.params;
+            const updateData = req.body;
+            
+            console.log(`Direct update details/pricing for listing ${listingId}:`, JSON.stringify(updateData, null, 2));
+            
+            // Find listing and verify ownership
+            const listing = await Listing.unscoped().findOne({
+                where: { 
+                    id: listingId,
+                    hostId: req.user.id
+                }
+            });
+            
+            if (!listing) {
+                return res.status(404).json({
+                    success: false,
+                    error: 'Listing not found or not authorized'
+                });
+            }
+            
+            // Process details data if present
+            if (updateData.details && typeof updateData.details === 'object') {
+                const detailsObj = {
+                    bedrooms: parseInt(updateData.details.bedrooms) || 1,
+                    bathrooms: parseFloat(updateData.details.bathrooms) || 1,
+                    beds: parseInt(updateData.details.beds) || 1,
+                    accommodates: parseInt(updateData.details.accommodates) || 2,
+                    adultGuests: parseInt(updateData.details.adultGuests) || 1,
+                    childGuests: parseInt(updateData.details.childGuests) || 0
+                };
+                
+                console.log(`Updating listing ${listingId} with details:`, detailsObj);
+                
+                // Update with direct SQL to ensure it works
+                try {
+                    await db.sequelize.query(`
+                        UPDATE "Listings" SET 
+                        "bedrooms" = $1, 
+                        "bathrooms" = $2, 
+                        "beds" = $3, 
+                        "accommodates" = $4, 
+                        "adultGuests" = $5, 
+                        "childGuests" = $6,
+                        "updatedAt" = NOW()
+                        WHERE id = $7`,
+                        {
+                            bind: [
+                                detailsObj.bedrooms,
+                                detailsObj.bathrooms,
+                                detailsObj.beds,
+                                detailsObj.accommodates,
+                                detailsObj.adultGuests,
+                                detailsObj.childGuests,
+                                listingId
+                            ],
+                            type: db.sequelize.QueryTypes.UPDATE
+                        }
+                    );
+                    console.log(`Successfully updated details with direct SQL`);
+                } catch (detailsError) {
+                    console.error('Error updating details:', detailsError);
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to update listing details',
+                        details: detailsError.message
+                    });
+                }
+            }
+            
+            // Process pricing data if present
+            if (updateData.pricing && typeof updateData.pricing === 'object') {
+                const pricingObj = {
+                    pricePerNight: parseFloat(updateData.pricing.pricePerNight) || 100,
+                    cleaningFee: parseFloat(updateData.pricing.cleaningFee) || 50,
+                    securityDeposit: parseFloat(updateData.pricing.securityDeposit) || 200,
+                    minimumNights: parseInt(updateData.pricing.minimumNights) || 1,
+                    maximumNights: parseInt(updateData.pricing.maximumNights) || 30
+                };
+                
+                console.log(`Updating listing ${listingId} with pricing:`, pricingObj);
+                
+                // Update with direct SQL to ensure it works
+                try {
+                    await db.sequelize.query(`
+                        UPDATE "Listings" SET 
+                        "pricePerNight" = $1, 
+                        "cleaningFee" = $2, 
+                        "securityDeposit" = $3, 
+                        "minimumNights" = $4, 
+                        "maximumNights" = $5,
+                        "updatedAt" = NOW()
+                        WHERE id = $7`,
+                        {
+                            bind: [
+                                pricingObj.pricePerNight,
+                                pricingObj.cleaningFee,
+                                pricingObj.securityDeposit,
+                                pricingObj.minimumNights,
+                                pricingObj.maximumNights,
+                                listingId
+                            ],
+                            type: db.sequelize.QueryTypes.UPDATE
+                        }
+                    );
+                    console.log(`Successfully updated pricing with direct SQL`);
+                } catch (pricingError) {
+                    console.error('Error updating pricing:', pricingError);
+                    return res.status(500).json({
+                        success: false,
+                        error: 'Failed to update listing pricing',
+                        details: pricingError.message
+                    });
+                }
+            }
+            
+            // Return success with the updated listing data
+            const updatedListing = await Listing.unscoped().findByPk(listingId);
+            
+            return res.json({
+                success: true,
+                message: 'Listing details and pricing updated successfully',
+                data: {
+                    id: updatedListing.id,
+                    bedrooms: updatedListing.bedrooms,
+                    bathrooms: updatedListing.bathrooms,
+                    beds: updatedListing.beds,
+                    accommodates: updatedListing.accommodates,
+                    adultGuests: updatedListing.adultGuests,
+                    childGuests: updatedListing.childGuests,
+                    pricePerNight: updatedListing.pricePerNight,
+                    cleaningFee: updatedListing.cleaningFee,
+                    securityDeposit: updatedListing.securityDeposit,
+                    minimumNights: updatedListing.minimumNights,
+                    maximumNights: updatedListing.maximumNights
+                }
+            });
+        } catch (error) {
+            console.error('Error updating details and pricing:', error);
+            return res.status(500).json({
+                success: false,
+                error: 'Failed to update listing details and pricing',
+                details: error.message
+            });
+        }
+    },
 };
 
 // Debug calendar data
