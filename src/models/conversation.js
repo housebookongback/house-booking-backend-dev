@@ -48,7 +48,19 @@ module.exports = (sequelize, DataTypes) => {
       all: { where: {} },
       archived: { where: { status: 'archived' } },
       blocked: { where: { status: 'blocked' } },
-      withListing: (listingId) => ({ where: { listingId } })
+      withListing: (listingId) => ({ where: { listingId } }),
+      betweenUsers: (userId1, userId2) => ({
+        include: [{
+          model: sequelize.models.ConversationParticipant,
+          as: 'participants',
+          attributes: [],                                // no payload needed
+          where: {
+            userId: { [Op.in]: [userId1, userId2] }
+          }
+        }],
+        group: ['Conversation.id'],                     // required for HAVING
+        having: literal('COUNT(DISTINCT "participants"."userId") = 2')
+      })
     },
     indexes: [
       { fields: ['listingId'] },
@@ -62,12 +74,13 @@ module.exports = (sequelize, DataTypes) => {
       }
     ],
     validate: {
-      async validParticipants() {
-        const participants = await this.getParticipants();
-        if (participants.length !== 2) {
-          throw new Error('Conversation must have exactly 2 participants');
-        }
-      },
+      // Commented out as it runs before participants exist
+      // async validParticipants() {
+      //   const participants = await this.getParticipants();
+      //   if (participants.length !== 2) {
+      //     throw new Error('Conversation must have exactly 2 participants');
+      //   }
+      // },
       async notBlocked() {
         if (this.status === 'blocked') {
           throw new Error('Cannot perform actions on a blocked conversation');
@@ -76,6 +89,7 @@ module.exports = (sequelize, DataTypes) => {
     },
     hooks: {
       afterCreate: async (conversation) => {
+        // Only update the timestamp, participants will be added after this
         conversation.lastMessageAt = new Date();
         await conversation.save();
       }
@@ -84,7 +98,7 @@ module.exports = (sequelize, DataTypes) => {
 
   // Class Methods
   Conversation.findOrCreateBetweenUsers = async function(userId1, userId2, listingId = null) {
-    const existing = await this.scope('betweenUsers', userId1, userId2).findOne();
+    const existing = await this.scope({ method: ['betweenUsers', userId1, userId2] }).findOne();
     if (existing) return existing;
 
     // otherwise create new
@@ -193,6 +207,14 @@ module.exports = (sequelize, DataTypes) => {
     Conversation.belongsTo(models.Listing, { foreignKey: 'listingId', as: 'listing' });
     Conversation.hasMany(models.ConversationParticipant, { foreignKey: 'conversationId', as: 'participants' });
     Conversation.hasMany(models.Message, { foreignKey: 'conversationId', as: 'messages' });
+    
+    // Add belongsToMany relationship with User
+    Conversation.belongsToMany(models.User, {
+      through: models.ConversationParticipant,
+      foreignKey: 'conversationId',
+      otherKey: 'userId',
+      as: 'users'
+    });
   };
 
   return Conversation;
