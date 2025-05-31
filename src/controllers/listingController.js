@@ -327,6 +327,15 @@ const listingController = {
     // Public routes
     getAllListings: async (req, res) => {
         try {
+            // Extract checkIn and checkOut from query params
+            const checkIn = req.query.checkIn;
+            const checkOut = req.query.checkOut;
+            
+            // Remove checkIn and checkOut from req.query to avoid duplicate processing
+            const queryParams = { ...req.query };
+            delete queryParams.checkIn;
+            delete queryParams.checkOut;
+
             const {
                 page = 1,
                 limit = 10,
@@ -341,9 +350,9 @@ const listingController = {
                 host,
                 search,
                 filters
-            } = req.query;
+            } = queryParams;
 
-            console.log('Received query parameters:', req.query);
+            console.log('Received query parameters:', { ...queryParams, checkIn, checkOut });
 
             // Build query options
             const queryOptions = {
@@ -355,7 +364,6 @@ const listingController = {
                         isPublic: true // Only show public listings to guests
                     }),
                     // If host parameter is provided, filter by hostId
-                    // This ensures hosts only see their own listings
                     ...(host === 'true' && req.user && { 
                         hostId: req.user.id 
                     })
@@ -418,10 +426,79 @@ const listingController = {
             if (minRating) queryOptions.where.averageRating = { [Op.gte]: minRating };
             if (instantBookable) queryOptions.where.instantBookable = instantBookable === 'true';
 
+            // 2) date availability check
+            if (checkIn && checkOut) {
+                // Validate date format
+                const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                if (!dateRegex.test(checkIn) || !dateRegex.test(checkOut)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid date format. Use YYYY-MM-DD'
+                    });
+                }
+
+                const start = new Date(checkIn);
+                const end = new Date(checkOut);
+                
+                // Basic date validation
+                if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Invalid date values'
+                    });
+                }
+
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+
+                if (start < today) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Check-in date cannot be in the past'
+                    });
+                }
+
+                if (end <= start) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Check-out date must be after check-in date'
+                    });
+                }
+
+                // Sanitize dates to prevent SQL injection
+                const sanitizedCheckIn = checkIn.replace(/[^0-9-]/g, '');
+                const sanitizedCheckOut = checkOut.replace(/[^0-9-]/g, '');
+
+                // Add date availability check using NOT EXISTS
+                queryOptions.where[Op.and] = [
+                    literal(`
+                        NOT EXISTS (
+                            SELECT 1 
+                            FROM "BookingCalendars" bc
+                            WHERE bc."listingId" = "Listings"."id"
+                                AND bc."date" BETWEEN '${sanitizedCheckIn}' AND '${sanitizedCheckOut}'
+                                AND bc."isAvailable" = false
+                                AND bc."deletedAt" IS NULL
+                        )
+                    `)
+                ];
+
+                // Log the actual date filter
+                console.log('Applied date filter:', queryOptions.where[Op.and]);
+            }
+
             console.log('Final query options:', JSON.stringify(queryOptions, null, 2));
 
             // Get listings and total count
-            const { count, rows: listings } = await Listing.findAndCountAll(queryOptions);
+            const { count, rows: listings } = await Listing.findAndCountAll({
+              ...queryOptions,
+              logging: (sql, timing) => {
+                console.log('\n=== SQL Query Debug ===');
+                console.log('SQL:', sql);
+                console.log('Execution time:', timing, 'ms');
+                console.log('=====================\n');
+              }
+            });
 
             console.log('Query results - count:', count, 'listings:', listings.length);
 
@@ -439,6 +516,15 @@ const listingController = {
             });
         } catch (error) {
             console.error('Error fetching listings:', error);
+            
+            // Handle date validation errors
+            if (error.message.includes('date')) {
+                return res.status(400).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+
             res.status(500).json({
                 success: false,
                 error: 'Failed to fetch listings',
