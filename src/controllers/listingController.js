@@ -2261,49 +2261,6 @@ const listingController = {
                 }
             }
             
-            // If no calendar entries were found, try to create a basic 90-day availability
-            if (calendarEntries.length === 0 && process.env.NODE_ENV !== 'production') {
-                console.log(`No calendar entries found. Creating 90-day default availability calendar for demonstration.`);
-                try {
-                    const defaultCalendarEntries = [];
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    
-                    // Create 90 days of availability starting from today
-                    for (let i = 0; i < 90; i++) {
-                        const date = new Date(today);
-                        date.setDate(today.getDate() + i);
-                        
-                        // Every 3rd day is unavailable to create a pattern
-                        const isAvailable = i % 3 !== 0;
-                        
-                        defaultCalendarEntries.push({
-                            listingId: listing.id,
-                            date,
-                            isAvailable,
-                            basePrice: isAvailable ? listing.pricePerNight || 100 : undefined,
-                            minStay: listing.minimumNights || 1,
-                            maxStay: listing.maximumNights || 30,
-                            checkInAllowed: isAvailable,
-                            checkOutAllowed: isAvailable
-                        });
-                    }
-                    
-                    // Save the default calendar entries
-                    const createdEntries = await BookingCalendar.bulkCreate(defaultCalendarEntries, {
-                        validate: false,
-                        ignoreDuplicates: true
-                    });
-                    
-                    console.log(`Created ${createdEntries.length} default calendar entries for demonstration`);
-                    
-                    // Use these entries as our result
-                    calendarEntries = createdEntries;
-                } catch (createError) {
-                    console.error(`Error creating default calendar entries: ${createError.message}`);
-                }
-            }
-            
             // Process calendar entries for API response
             const processedCalendar = calendarEntries.map(entry => {
                 // Handle both Sequelize model instances and raw SQL results
