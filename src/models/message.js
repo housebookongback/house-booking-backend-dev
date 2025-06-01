@@ -66,11 +66,15 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         indexes: [
-            { fields: ['conversationId'] },
+            { name: 'conv_created_idx', fields: ['conversationId', 'createdAt'] },
+            { 
+                name: 'msg_unread_idx',
+                fields: ['conversationId'],
+                where: { readAt: null }
+            },
             { fields: ['senderId'] },
             { fields: ['isRead'] },
             { fields: ['readAt'] },
-            { fields: ['createdAt'] },
             { fields: ['isActive'] },
             { fields: ['deletedAt'] }
         ],
@@ -101,17 +105,19 @@ module.exports = (sequelize, DataTypes) => {
                     const conversation = await sequelize.models.Conversation.findByPk(message.conversationId, {
                         include: [{
                             model: sequelize.models.User,
-                            as: 'participants',
+                            as: 'users',
+                            attributes: ['id'],          // we only need the ids
+                            through: { attributes: [] }, // skip join-table payload
                             where: {
                                 id: { [Op.ne]: message.senderId }
                             }
                         }]
                     });
 
-                    if (conversation?.participants) {
-                        await Promise.all(conversation.participants.map(participant =>
+                    if (conversation?.users) {
+                        await Promise.all(conversation.users.map(user =>
                             sequelize.models.Notification.create({
-                                userId: participant.id,
+                                userId: user.id,
                                 type: 'info',
                                 category: 'message',
                                 title: 'New Message',
@@ -140,24 +146,32 @@ module.exports = (sequelize, DataTypes) => {
 
     // Class Methods
     Message.findByConversation = function(conversationId) {
-        return this.scope('byConversation', conversationId)
-            .scope('recent')
-            .findAll();
-    };
+  return this
+    .scope({ method: ['byConversation', conversationId] })
+    .scope('recent')
+    .findAll();
+};
 
     Message.findUnreadByUser = function(userId) {
         return this.findAll({
+            include: [
+                {
+                    model: sequelize.models.Conversation,
+                    as: 'conversation',
+                    include: [
+                        {
+                            model: sequelize.models.ConversationParticipant,
+                            as: 'participants',
+                            attributes: [],           // no payload needed
+                            where: { userId }
+                        }
+                    ]
+                }
+            ],
             where: {
-                isRead: false,
-                [Op.or]: [
-                    { senderId: userId },
-                    { '$Conversation.participants$': { [Op.contains]: [userId] } }
-                ]
-            },
-            include: [{
-                model: sequelize.models.Conversation,
-                as: 'conversation'
-            }]
+                senderId: { [Op.ne]: userId }, // don't count own messages
+                readAt: null                   // still unread
+            }
         });
     };
 

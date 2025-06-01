@@ -14,6 +14,13 @@ module.exports = (sequelize, DataTypes) => {
             onDelete: 'CASCADE',
             onUpdate: 'CASCADE'
         },
+        uploaderId: {
+            type: DataTypes.INTEGER,
+            allowNull: false,
+            references: { model: 'Users', key: 'id' },
+            onDelete: 'CASCADE',
+            onUpdate: 'CASCADE'
+        },
         fileName: {
             type: DataTypes.STRING(255),
             allowNull: false
@@ -168,6 +175,10 @@ module.exports = (sequelize, DataTypes) => {
         MessageAttachment.belongsTo(models.Message, {
             foreignKey: 'messageId',
             as: 'message'
+        });
+        MessageAttachment.belongsTo(models.User, {
+            foreignKey: 'uploaderId',
+            as: 'uploader'
         });
     };
 
