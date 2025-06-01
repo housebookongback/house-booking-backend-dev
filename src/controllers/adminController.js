@@ -5,12 +5,13 @@ const adminController = {
     // List all host verifications with optional filters
     listHostVerifications: async (req, res) => {
         try {
-            const { status, type, page = 1, limit = 10 } = req.query;
+            const { status, type, page = 1, limit = 10, hostId } = req.query;
             const offset = (page - 1) * limit;
 
             const where = {};
             if (status) where.status = status;
             if (type) where.type = type;
+            if (hostId) where.hostId = hostId;
 
             const verifications = await HostVerification.findAndCountAll({
                 where,

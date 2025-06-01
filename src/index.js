@@ -6,11 +6,9 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-; // Import the verify middleware
 const db      = require('./models'); // Import Sequelize models
-//const { uploadSingle } = require('./middleware/upload');
 const { uploadMultiple } = require('./middleware/upload');
-
+const path = require('path');
 
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
@@ -88,6 +86,15 @@ app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.body:', req.body);
   return res.json({ received: Boolean(req.file), file: req.file });
 });
+
+// Configure CORS headers specifically for static files in uploads directory
+app.use('/api/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 /* ───────────── 404 fallback ───────────── */
 app.use((_, res) => res.status(404).json({ 
