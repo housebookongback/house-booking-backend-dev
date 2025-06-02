@@ -2,6 +2,7 @@ require("dotenv").config({ path: "../../.env" });
 const { MailerSend, Sender, Recipient } = require("mailersend");
 const nodemailer = require('nodemailer');
 const bcrypt = require("bcrypt");
+const { User } = require('../models');
 
 // Simulated storage (replace with MongoDB/Redis in production)
 const verificationCodes = new Map();
@@ -125,38 +126,46 @@ const sendEmail = async (req, res) => {
       port: 587, // or 465 for SSL
       secure: false, // true for 465, false for other ports
       auth: {
-        user:process.env.EMAIL_USER, // Replace with your email
+        user:process.env.USER_EMAIL, // Replace with your email
         pass:process.env.PASS    // Replace with your password
       },
     });
 
     // Email content
     const mailOptions = {
-      from: '"House Booking" <your-email@example.com>', // Sender address
+      from: 'House Booking <no-reply@housebooking.com>', // Branded sender
       to: email, // Recipient
-      subject: "Your Verification Code",
+      subject: "Your House Booking Password Reset Code",
       html: `
         <!DOCTYPE html>
         <html lang="en">
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Verification Code</title>
+          <title>Password Reset Code</title>
+          <style>
+            body { background: #f7f7f9; margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; }
+            .container { max-width: 420px; margin: 40px auto; background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); padding: 32px 24px; }
+            .logo { font-size: 28px; color: #007bff; font-weight: bold; margin-bottom: 12px; letter-spacing: 1px; }
+            .code { font-size: 32px; font-weight: bold; color: #007bff; background: #f0f4ff; padding: 16px 0; border-radius: 8px; letter-spacing: 6px; margin: 24px 0; }
+            .footer { color: #888; font-size: 13px; margin-top: 32px; }
+            .btn { display: inline-block; background: #007bff; color: #fff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-weight: 500; margin-top: 18px; }
+          </style>
         </head>
         <body>
-          <div style="text-align: center; font-family: Arial, sans-serif; color: #333;">
-            <h1>Verify Your Account</h1>
-            <p>Hello ${recipientName},<br>Thank you for joining House Booking! Use the code below to verify your email address:</p>
-            <div style="font-size: 28px; margin: 20px 0; color: #007bff;">
-              ${verificationCode}
-            </div>
-            <p>This code expires in 10 minutes. If you didn't request this, please ignore this email.</p>
-            <p>Best regards,<br>The House Booking Team</p>
+          <div class="container">
+            <div class="logo">🏠 House Booking</div>
+            <h2 style="color:#222;">Reset Your Password</h2>
+            <p style="color:#444;">Hi ${recipientName},</p>
+            <p style="color:#444;">We received a request to reset your password. Use the code below to set a new password for your House Booking account:</p>
+            <div class="code">${verificationCode}</div>
+            <p style="color:#444;">This code will expire in <b>10 minutes</b>. If you did not request a password reset, you can safely ignore this email.</p>
+            <div class="footer">Need help? Contact our support team.<br/>Thank you for using House Booking!</div>
           </div>
         </body>
         </html>
       `,
-      text: `Hello ${recipientName},\n\nYour verification code is: ${verificationCode}\n\nThank you for joining House Booking! This code expires in 10 minutes. If you didn't request this, please ignore this email.\n\nBest regards,\nThe House Booking Team`,
+      text: `Hi ${recipientName},\n\nWe received a request to reset your House Booking password.\n\nYour password reset code is: ${verificationCode}\n\nThis code expires in 10 minutes. If you did not request a password reset, you can ignore this email.\n\nThank you for using House Booking!`,
     };
 
     // Send the email
@@ -182,7 +191,11 @@ const verifyCode = async (req, res) => {
     if (!email || !isValidEmail(email)) {
       return res.status(400).json({ error: "Invalid or missing email address" });
     }
-    if (!code || typeof code !== "string" || !/^\d{6}$/.test(code)) {
+
+    // Accept code as string or number, and always convert to string for validation
+    const codeStr = String(code);
+
+    if (!/^\d{6}$/.test(codeStr)) {
       return res.status(400).json({ error: "Invalid verification code. Must be a 6-digit number" });
     }
 
@@ -199,18 +212,71 @@ const verifyCode = async (req, res) => {
     }
 
     // Compare hashed code
-    const isValid = await bcrypt.compare(code, storedData.code);
+    const isValid = await bcrypt.compare(codeStr, storedData.code);
     if (!isValid) {
       return res.status(400).json({ error: "Invalid code" });
     }
 
     // Code is valid; clean up
     verificationCodes.delete(email);
-    res.status(200).json({data:{ message: "Verification successful" }});
+    res.status(200).json({ data: { message: "Verification successful" } });
   } catch (error) {
     console.error("Error verifying code:", error);
     res.status(500).json({ error: "Failed to verify code", details: error.message });
   }
 };
 
-module.exports = { sendEmail, verifyCode };
+const updatePassword = async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    // Validate email and new password
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ error: "Invalid or missing email address" });
+    }
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: "Password must be at least 6 characters" });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ where: { email } });
+    if (!user) {
+      return res.status(404).json({ error: "No user found with this email" });
+    }
+
+    // Hash and update password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    user.passwordHash = passwordHash;
+    await user.save();
+
+    res.status(200).json({ message: "Password updated successfully" });
+  } catch (error) {
+    console.error("Error updating password:", error);
+    res.status(500).json({ error: "Failed to update password", details: error.message });
+  }
+};
+
+const checkEmailExists = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Basic validation
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: "Email is required" });
+    }
+
+    const existingUser = await User.findOne({ where: { email } });
+
+    if (existingUser) {
+      return res.status(200).json({ exists: true, message: "Email already exists" });
+    } else {
+      return res.status(200).json({ exists: false, message: "Email is available" });
+    }
+  } catch (error) {
+    console.error("Error checking email existence:", error);
+    return res.status(500).json({ error: "Internal server error", details: error.message });
+  }
+};
+
+
+module.exports = { sendEmail, verifyCode, updatePassword,checkEmailExists };

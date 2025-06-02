@@ -22,7 +22,7 @@ const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
 const reviewRoutes = require('./routes/reviewRoutes'); // Add review routes
-
+const wishlistRoutes = require('./routes/wishlistRoutes'); // Add wishlist routes
 
 const notificationRoutes = require('./routes/notificationRoutes');
 const searchRoutes = require('./routes/searchRoutes');
@@ -80,7 +80,7 @@ app.use('/api/admin', adminRoutes); // Add admin routes
 app.use('/api/reviews', reviewRoutes); // Add review routes
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/search', searchRoutes);
-
+app.use('/api/wishlists', wishlistRoutes); // Add wishlist routes
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.file:', req.file);

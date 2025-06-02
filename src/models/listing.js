@@ -293,10 +293,6 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: [0,1,2,3,4,5,6]
       },
-      location: {
-  type: DataTypes.GEOMETRY('POINT'),
-  allowNull: true
-},
     }, {
       tableName: 'Listings', // Ensure the table name matches 'Listings'
       timestamps: true,
