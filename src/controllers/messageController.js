@@ -11,6 +11,7 @@ const {
   Listing
 } = require('../models');
 const { Op } = require('sequelize');
+const { literal } = require('sequelize');
 
 // Initialize with a function to ensure we get the latest instance
 const getMessageNamespaceInstance = () => {
@@ -71,21 +72,133 @@ const messageController = {
         return res.status(404).json({ message: 'Other user not found' });
       }
 
-      // Find or create conversation
-      // (Assuming findOrCreateBetweenUsers returns either [instance, created] or instance itself)
-      let conversation = await Conversation.findOrCreateBetweenUsers(
-        currentUserId,
-        otherUserId,
-        listingId
-      );
-      // If your helper returns an array: [conv, created], do:
-      // const [conversation] = await Conversation.findOrCreateBetweenUsers(...);
+      // First, try to find an existing conversation ID
+      const existingConversation = await Conversation.findOne({
+        attributes: ['id'],
+        include: [
+          {
+            model: ConversationParticipant,
+            as: 'participants',
+            attributes: [], // Don't select any participant columns
+            where: {
+              userId: { [Op.in]: [currentUserId, otherUserId] }
+            }
+          }
+        ],
+        group: ['Conversation.id'],
+        having: literal('COUNT(DISTINCT "participants"."userId") = 2'),
+        subQuery: false
+      });
 
-      // ─── Notify the host via Socket.IO ────────────────────────────────────────
+      let conversation;
+      if (existingConversation) {
+        // If found, load the full conversation details
+        conversation = await Conversation.findByPk(existingConversation.id, {
+          include: [
+            {
+              model: User,
+              as: 'users',
+              attributes: ['id', 'name', 'email', 'profilePicture']
+            },
+            {
+              model: Message,
+              as: 'messages',
+              limit: 20,
+              order: [['createdAt', 'DESC']],
+              include: [
+                {
+                  model: User,
+                  as: 'sender',
+                  attributes: ['id', 'name', 'profilePicture']
+                }
+              ]
+            },
+            {
+              model: ConversationParticipant,
+              as: 'participants',
+              include: [
+                {
+                  model: User,
+                  as: 'user',
+                  attributes: ['id', 'name', 'email', 'profilePicture']
+                }
+              ]
+            },
+            {
+              model: Listing,
+              as: 'listing',
+              attributes: ['id', 'title', 'description']
+            }
+          ]
+        });
+      } else {
+        // Create new conversation
+        conversation = await Conversation.create({
+          listingId,
+          title: listing.title
+        });
+
+        // Create participants
+        await ConversationParticipant.bulkCreate([
+          {
+            conversationId: conversation.id,
+            userId: currentUserId,
+            role: 'guest'
+          },
+          {
+            conversationId: conversation.id,
+            userId: otherUserId,
+            role: 'host'
+          }
+        ]);
+
+        // Load the full conversation details for the new conversation
+        conversation = await Conversation.findByPk(conversation.id, {
+          include: [
+            {
+              model: User,
+              as: 'users',
+              attributes: ['id', 'name', 'email', 'profilePicture']
+            },
+            {
+              model: Message,
+              as: 'messages',
+              limit: 20,
+              order: [['createdAt', 'DESC']],
+              include: [
+                {
+                  model: User,
+                  as: 'sender',
+                  attributes: ['id', 'name', 'profilePicture']
+                }
+              ]
+            },
+            {
+              model: ConversationParticipant,
+              as: 'participants',
+              include: [
+                {
+                  model: User,
+                  as: 'user',
+                  attributes: ['id', 'name', 'email', 'profilePicture']
+                }
+              ]
+            },
+            {
+              model: Listing,
+              as: 'listing',
+              attributes: ['id', 'title', 'description']
+            }
+          ]
+        });
+      }
+
+      // Notify the host via Socket.IO
       const conversationId = conversation.id;
       const roomId = `conversation:${conversationId}`;
-      const hostId = listing.hostId; // ← CHANGED: define hostId here
+      const hostId = listing.hostId;
       const hostSocketId = getActiveUsersInstance().get(hostId);
+      
       if (hostSocketId) {
         const messageNamespace = getMessageNamespaceInstance();
         if (messageNamespace) {
@@ -95,37 +208,10 @@ const messageController = {
             guestId: currentUserId,
             listingId
           });
-        } else {
-          console.warn('Socket namespace not available, message created but not broadcast');
         }
       }
-      // ────────────────────────────────────────────────────────────────────────────
 
-      // Get conversation with participants and last messages
-      const conversationWithDetails = await Conversation.findByPk(conversationId, {
-        include: [
-          {
-            model: User,
-            as: 'users',
-            attributes: ['id', 'name', 'email', 'profilePicture']
-          },
-          {
-            model: Message,
-            as: 'messages',
-            limit: 20,
-            order: [['createdAt', 'DESC']],
-            include: [
-              {
-                model: User,
-                as: 'sender',
-                attributes: ['id', 'name', 'profilePicture']
-              }
-            ]
-          }
-        ]
-      });
-
-      return res.json(conversationWithDetails);
+      return res.json(conversation);
     } catch (error) {
       console.error('Error in getOrCreateConversation:', error);
       return res.status(500).json({ message: error.message });
@@ -165,6 +251,11 @@ const messageController = {
                 attributes: ['id', 'name', 'email', 'profilePicture']
               }
             ]
+          },
+          {
+            model: Listing,
+            as: 'listing',
+            attributes: ['id', 'title', 'description']
           }
         ],
         order: [['lastMessageAt', 'DESC']]
@@ -177,11 +268,57 @@ const messageController = {
           const otherParticipant = await conv.getOtherParticipant(req.user.id);
           const lastMessage = conv.messages[0] || null;
 
+          // Get the listing title
+          const listingTitle = conv.listing ? conv.listing.title : 'No listing';
+          
+          // Get the other participant's name and role
+          let participantName = 'Unknown';
+          let participantRole = 'guest';
+          
+          if (otherParticipant) {
+            // Find the participant's role
+            const participant = conv.participants.find(p => p.user.id === otherParticipant.id);
+            if (participant) {
+              participantRole = participant.role;
+            }
+            
+            // Use the actual name if available
+            participantName = otherParticipant.name || participantRole;
+          }
+
+          // Create a title that includes both the listing and participant name
+          const title = `${listingTitle} - ${participantName}`;
+
+          // Log the conversation details for debugging
+          console.log('Conversation details:', {
+            id: conv.id,
+            listingTitle,
+            participantName,
+            participantRole,
+            otherParticipant: otherParticipant ? {
+              id: otherParticipant.id,
+              name: otherParticipant.name,
+              email: otherParticipant.email,
+              profilePicture: otherParticipant.profilePicture
+            } : null,
+            participants: conv.participants.map(p => ({
+              id: p.user.id,
+              name: p.user.name,
+              role: p.role
+            }))
+          });
+
           return {
             ...conv.toJSON(),
+            title,
             unreadCount,
             otherParticipant,
-            lastMessage
+            lastMessage,
+            listing: conv.listing ? {
+              id: conv.listing.id,
+              title: conv.listing.title,
+              description: conv.listing.description
+            } : null
           };
         })
       );

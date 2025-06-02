@@ -111,13 +111,36 @@ module.exports = (sequelize, DataTypes) => {
 
     if (rows.length > 0) {
       const existingConvId = rows[0].conversationId;
-      return await this.findByPk(existingConvId);
+      const existingConv = await this.findByPk(existingConvId, {
+        include: [
+          {
+            model: sequelize.models.Listing,
+            as: 'listing',
+            attributes: ['id', 'title']
+          }
+        ]
+      });
+      
+      // Update title if it's null and we have a listing
+      if (!existingConv.title && existingConv.listing) {
+        await existingConv.update({ title: existingConv.listing.title });
+      }
+      
+      return existingConv;
     }
 
     // 2) Otherwise, create a new conversation
+    let title = null;
+    if (listingId) {
+      const listing = await sequelize.models.Listing.findByPk(listingId);
+      if (listing) {
+        title = listing.title;
+      }
+    }
+
     const newConv = await this.create({
       listingId,
-      title: listingId ? null : `Conversation between ${userId1} & ${userId2}`,
+      title,
     });
 
     // 3) Assign roles based on listing ownership
@@ -129,7 +152,7 @@ module.exports = (sequelize, DataTypes) => {
 
     // If listingId is provided, verify roles based on listing ownership
     if (listingId) {
-      const listing = await sequelize.models.Listings.findByPk(listingId);
+      const listing = await sequelize.models.Listing.findByPk(listingId);
       if (listing) {
         // If userId1 is the host, swap the roles
         if (listing.hostId === userId1) {
@@ -142,7 +165,46 @@ module.exports = (sequelize, DataTypes) => {
     }
 
     await sequelize.models.ConversationParticipant.bulkCreate(roles);
-    return newConv;
+
+    // Return the conversation with all necessary includes
+    return this.findByPk(newConv.id, {
+      include: [
+        {
+          model: sequelize.models.User,
+          as: 'users',
+          attributes: ['id', 'name', 'email', 'profilePicture']
+        },
+        {
+          model: sequelize.models.Message,
+          as: 'messages',
+          limit: 20,
+          order: [['createdAt', 'DESC']],
+          include: [
+            {
+              model: sequelize.models.User,
+              as: 'sender',
+              attributes: ['id', 'name', 'profilePicture']
+            }
+          ]
+        },
+        {
+          model: sequelize.models.ConversationParticipant,
+          as: 'participants',
+          include: [
+            {
+              model: sequelize.models.User,
+              as: 'user',
+              attributes: ['id', 'name', 'email', 'profilePicture']
+            }
+          ]
+        },
+        {
+          model: sequelize.models.Listing,
+          as: 'listing',
+          attributes: ['id', 'title', 'description']
+        }
+      ]
+    });
   };
 
   Conversation.getUserConversations = async function (userId, options = {}) {
@@ -181,9 +243,26 @@ module.exports = (sequelize, DataTypes) => {
   Conversation.prototype.getOtherParticipant = async function (userId) {
     const part = await sequelize.models.ConversationParticipant.findOne({
       where: { conversationId: this.id, userId: { [Op.ne]: userId } },
-      include: [{ model: sequelize.models.User, as: 'user' }],
+      include: [
+        { 
+          model: sequelize.models.User, 
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'profilePicture']
+        }
+      ]
     });
-    return part?.user;
+    
+    if (!part) return null;
+    
+    // Return the full user object
+    return part.user;
+  };
+
+  Conversation.prototype.getParticipantRole = async function (userId) {
+    const part = await sequelize.models.ConversationParticipant.findOne({
+      where: { conversationId: this.id, userId }
+    });
+    return part ? part.role : null;
   };
 
   Conversation.prototype.getUnreadCount = async function (userId) {
