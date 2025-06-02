@@ -48,4 +48,18 @@ try {
   console.error('Error printing routes:', err);
 }
 
+// Create HTTP server
+const server = http.createServer(app);
+
+// Initialize Socket.IO with the HTTP server
+const io = initializeSocket(server);
+
+// Make io accessible to routes if needed
+app.set('io', io);
+
+// Start the server
+server.listen(port, () => {
+    console.log(`🚀 API + Socket running on http://localhost:${port}`);
+});
+
 module.exports = app; 

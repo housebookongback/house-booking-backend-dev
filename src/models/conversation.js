@@ -120,20 +120,24 @@ module.exports = (sequelize, DataTypes) => {
       title: listingId ? null : `Conversation between ${userId1} & ${userId2}`,
     });
 
-    // 3) Assign roles (guest vs host) based on listing ownership
+    // 3) Assign roles based on listing ownership
+    // By default, userId1 is the guest and userId2 is the host
     let roles = [
       { conversationId: newConv.id, userId: userId1, role: 'guest' },
       { conversationId: newConv.id, userId: userId2, role: 'host' },
     ];
 
+    // If listingId is provided, verify roles based on listing ownership
     if (listingId) {
-      // Raw lookup must use sequelize.models.Listings (plural)
       const listing = await sequelize.models.Listings.findByPk(listingId);
-      if (listing && listing.hostId === userId1) {
-        roles = [
-          { conversationId: newConv.id, userId: userId1, role: 'host' },
-          { conversationId: newConv.id, userId: userId2, role: 'guest' },
-        ];
+      if (listing) {
+        // If userId1 is the host, swap the roles
+        if (listing.hostId === userId1) {
+          roles = [
+            { conversationId: newConv.id, userId: userId1, role: 'host' },
+            { conversationId: newConv.id, userId: userId2, role: 'guest' },
+          ];
+        }
       }
     }
 

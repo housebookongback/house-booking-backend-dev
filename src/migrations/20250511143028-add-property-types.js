@@ -200,4 +200,4 @@ module.exports = {
       await queryInterface.dropTable('PropertyTypes');
       return queryInterface.sequelize.query('DROP TYPE IF EXISTS "enum_PropertyTypes_name";');
     }
-  };
+  }; 

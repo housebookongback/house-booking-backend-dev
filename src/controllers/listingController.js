@@ -74,7 +74,7 @@ const listingController = {
                 filters
             } = queryParams;
 
-            console.log('Received query parameters:', { ...queryParams, checkIn, checkOut });
+            //console.log('Received query parameters:', { ...queryParams, checkIn, checkOut });
 
             // Build query options
             const queryOptions = {
@@ -208,16 +208,16 @@ const listingController = {
                 console.log('Applied date filter:', queryOptions.where[Op.and]);
             }
 
-            console.log('Final query options:', JSON.stringify(queryOptions, null, 2));
+           // console.log('Final query options:', JSON.stringify(queryOptions, null, 2));
 
             // Get listings and total count
             const { count, rows: listings } = await Listing.findAndCountAll({
               ...queryOptions,
               logging: (sql, timing) => {
-                console.log('\n=== SQL Query Debug ===');
-                console.log('SQL:', sql);
-                console.log('Execution time:', timing, 'ms');
-                console.log('=====================\n');
+                //console.log('\n=== SQL Query Debug ===');
+                //console.log('SQL:', sql);
+                //console.log('Execution time:', timing, 'ms');
+                //console.log('=====================\n');
               }
             });
 
