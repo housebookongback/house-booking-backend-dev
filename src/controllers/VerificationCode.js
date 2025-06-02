@@ -107,7 +107,7 @@ const sendEmail = async (req, res) => {
 
     // Validate email
     if (!email || !isValidEmail(email)) {
-      return res.status(400).json({ error: "Invalid or missing email address" });
+      return res.status(400).json({data:{ error: "Invalid or missing email address" }});
     }
 
     // Generate verification code
@@ -172,14 +172,14 @@ const sendEmail = async (req, res) => {
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
         console.error("Error sending email:", error.message);
-        return res.status(500).json({ error: "Failed to send email", details: error.message });
+        return res.status(500).json({data:{ error: "Failed to send email", details: error.message }});
       }
       console.log("Email sent successfully:", info.messageId);
-      res.status(200).json({ message: "Email sent successfully" });
+      res.status(200).json({data:{ message: "Email sent successfully" }});
     });
   } catch (error) {
     console.error("Error sending email:", error.message);
-    res.status(500).json({ error: "Failed to send email", details: error.message });
+    res.status(500).json({data:{ error: "Failed to send email", details: error.message }});
   }
 };
 
@@ -189,40 +189,40 @@ const verifyCode = async (req, res) => {
 
     // Validate inputs
     if (!email || !isValidEmail(email)) {
-      return res.status(400).json({ error: "Invalid or missing email address" });
+      return res.status(400).json({data:{ error: "Invalid or missing email address" }});
     }
 
     // Accept code as string or number, and always convert to string for validation
     const codeStr = String(code);
 
     if (!/^\d{6}$/.test(codeStr)) {
-      return res.status(400).json({ error: "Invalid verification code. Must be a 6-digit number" });
+      return res.status(400).json({data:{ error: "Invalid verification code. Must be a 6-digit number" }});
     }
 
     // Retrieve stored code
     const storedData = verificationCodes.get(email);
 
     if (!storedData) {
-      return res.status(400).json({ error: "No verification code found for this email" });
+      return res.status(400).json({data:{ error: "No verification code found for this email" }});
     }
 
     if (storedData.expiresAt < Date.now()) {
       verificationCodes.delete(email);
-      return res.status(400).json({ error: "Code has expired" });
+      return res.status(400).json({data:{ error: "Code has expired" }});
     }
 
     // Compare hashed code
     const isValid = await bcrypt.compare(codeStr, storedData.code);
     if (!isValid) {
-      return res.status(400).json({ error: "Invalid code" });
+      return res.status(400).json({data:{ error: "Invalid code" }});
     }
 
     // Code is valid; clean up
     verificationCodes.delete(email);
-    res.status(200).json({ data: { message: "Verification successful" } });
+    res.status(200).json({data:{ message: "Verification successful" }});
   } catch (error) {
     console.error("Error verifying code:", error);
-    res.status(500).json({ error: "Failed to verify code", details: error.message });
+    res.status(500).json({data:{ error: "Failed to verify code", details: error.message }});
   }
 };
 
@@ -232,16 +232,16 @@ const updatePassword = async (req, res) => {
 
     // Validate email and new password
     if (!email || !isValidEmail(email)) {
-      return res.status(400).json({ error: "Invalid or missing email address" });
+      return res.status(400).json({data:{ error: "Invalid or missing email address" }});
     }
     if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters" });
+      return res.status(400).json({data:{ error: "Password must be at least 6 characters" }});
     }
 
     // Find user by email
     const user = await User.findOne({ where: { email } });
     if (!user) {
-      return res.status(404).json({ error: "No user found with this email" });
+      return res.status(404).json({data:{ error: "No user found with this email" }});
     }
 
     // Hash and update password
@@ -249,10 +249,10 @@ const updatePassword = async (req, res) => {
     user.passwordHash = passwordHash;
     await user.save();
 
-    res.status(200).json({ message: "Password updated successfully" });
+    res.status(200).json({data:{ message: "Password updated successfully" }});
   } catch (error) {
     console.error("Error updating password:", error);
-    res.status(500).json({ error: "Failed to update password", details: error.message });
+    res.status(500).json({data:{ error: "Failed to update password", details: error.message }});
   }
 };
 
@@ -262,19 +262,19 @@ const checkEmailExists = async (req, res) => {
 
     // Basic validation
     if (!email || typeof email !== 'string') {
-      return res.status(400).json({ error: "Email is required" });
+      return res.status(400).json({data:{ error: "Email is required" }});
     }
 
     const existingUser = await User.findOne({ where: { email } });
 
     if (existingUser) {
-      return res.status(200).json({ exists: true, message: "Email already exists" });
+      return res.status(200).json({data:{ exists: true, message: "Email already exists" }});
     } else {
-      return res.status(200).json({ exists: false, message: "Email is available" });
+      return res.status(200).json({data:{ exists: false, message: "Email is available" }});
     }
   } catch (error) {
     console.error("Error checking email existence:", error);
-    return res.status(500).json({ error: "Internal server error", details: error.message });
+    return res.status(500).json({data:{ error: "Internal server error", details: error.message }});
   }
 };
 
