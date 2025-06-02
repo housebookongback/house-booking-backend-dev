@@ -25,6 +25,7 @@ router.get('/users', authenticate, verifyAdmin, adminController.listUsers);
 router.get('/users/:id', authenticate, verifyAdmin, adminController.getUserDetails);
 router.post('/users/:id/ban', authenticate, verifyAdmin, adminController.banUser);
 router.post('/users/:id/unban', authenticate, verifyAdmin, adminController.unbanUser);
+router.post('/users/:id/block-from-review', authenticate, verifyAdmin, adminController.blockUserFromReview);
 router.post('/users/bulk-ban', authenticate, verifyAdmin, adminController.bulkBanUsers);
 router.post('/users/bulk-unban', authenticate, verifyAdmin, adminController.bulkUnbanUsers);
 

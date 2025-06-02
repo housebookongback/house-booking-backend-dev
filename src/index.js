@@ -6,15 +6,14 @@ const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
-; // Import the verify middleware
 const db      = require('./models'); // Import Sequelize models
-//const { uploadSingle } = require('./middleware/upload');
 const { uploadMultiple } = require('./middleware/upload');
-
+const path = require('path');
 
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
+const userRoutes    = require('./routes/userRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const verify  = require('./routes/VerificationCodeRoutes')
 const hostApplicationRoutes = require('./routes/hostApplicationRoutes');
@@ -22,10 +21,10 @@ const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
 const reviewRoutes = require('./routes/reviewRoutes'); // Add review routes
-
-
 const notificationRoutes = require('./routes/notificationRoutes');
 const searchRoutes = require('./routes/searchRoutes');
+const debugRoutes = require('./routes/debugRoutes'); // Debug routes for troubleshooting
+
 const app = express();
 
 /* ───────────── Global middleware ───────────── */
@@ -70,6 +69,7 @@ db.init()
 
 /* ───────────── API routes ───────────── */
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use("/api/verify", verify)
@@ -80,6 +80,7 @@ app.use('/api/admin', adminRoutes); // Add admin routes
 app.use('/api/reviews', reviewRoutes); // Add review routes
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/debug', debugRoutes); // Debug routes for troubleshooting
 
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
@@ -87,6 +88,15 @@ app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.body:', req.body);
   return res.json({ received: Boolean(req.file), file: req.file });
 });
+
+// Configure CORS headers specifically for static files in uploads directory
+app.use('/api/uploads', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(path.join(__dirname, '../uploads')));
 
 /* ───────────── 404 fallback ───────────── */
 app.use((_, res) => res.status(404).json({ 
@@ -96,8 +106,15 @@ app.use((_, res) => res.status(404).json({
 
 /* ───────────── Error handler ───────────── */
 app.use((err, req, res, _next) => {
-    console.error(err.stack);
-    res.status(err.status || 500).json({
+    console.error('Error:', err.message);
+    if (err.stack) {
+        console.error(err.stack);
+    }
+    
+    // Set a valid status code (if err.status is invalid, default to 500)
+    const statusCode = (err.status >= 100 && err.status < 600) ? err.status : 500;
+    
+    res.status(statusCode).json({
         message: err.message || 'Something went wrong!',
         error: process.env.NODE_ENV === 'development' ? err.stack : undefined,
         status: 'error'

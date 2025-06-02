@@ -117,8 +117,37 @@ module.exports = (sequelize, DataTypes) => {
         ],
         validate: {
             async validListing() {
-                const listing = await sequelize.models.Listing.findByPk(this.listingId);
-                if (!listing) throw new Error('Invalid listing');
+                if (!this.listingId) return true;
+                
+                try {
+                    // Use unscoped to find listings regardless of status
+                    const listing = await sequelize.models.Listings.unscoped().findByPk(this.listingId);
+                    
+                    if (!listing) {
+                        console.error(`PriceRule validation: Listing with ID ${this.listingId} not found`);
+                        
+                        // If this is part of a transaction or validation is disabled, don't throw
+                        if ((this._options && this._options.transaction) ||
+                            (this._options && this._options.validate === false)) {
+                            console.log(`Warning: Skipping validation for listing ${this.listingId} in PriceRule`);
+                            return true;
+                        }
+                        
+                        throw new Error(`Listing with ID ${this.listingId} not found`);
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    console.error(`PriceRule validListing error:`, error);
+                    
+                    // If validation is disabled, continue without throwing
+                    if (this._options && this._options.validate === false) {
+                        console.log(`PriceRule validation disabled, skipping checks for listing ${this.listingId}`);
+                        return true;
+                    }
+                    
+                    throw error;
+                }
             },
             validDateRange() {
                 if (this.startDate > this.endDate) {

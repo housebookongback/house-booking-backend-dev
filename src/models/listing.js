@@ -103,6 +103,26 @@ module.exports = (sequelize, DataTypes) => {
           }
         }
       },
+      adultGuests: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        validate: {
+          min: 1,
+          isRequiredIfPublished(value) {
+            if (this.status === 'published' && (value == null || value < 1)) {
+              throw new Error('At least one adult guest is required for published listings');
+            }
+          }
+        }
+      },
+      childGuests: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: 0,
+        validate: {
+          min: 0
+        }
+      },
       bedrooms: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -293,10 +313,6 @@ module.exports = (sequelize, DataTypes) => {
         allowNull: false,
         defaultValue: [0,1,2,3,4,5,6]
       },
-      location: {
-  type: DataTypes.GEOMETRY('POINT'),
-  allowNull: true
-},
     }, {
       tableName: 'Listings', // Ensure the table name matches 'Listings'
       timestamps: true,
@@ -385,23 +401,39 @@ module.exports = (sequelize, DataTypes) => {
   });
 
  // After publish, seed calendar
-//changed from Listings to Listing
- Listing.addHook('afterUpdate', async listing => {
-    if (listing.changed('status') && listing.status === 'published') {
-      const days=365, today=new Date(), batch=[];
-      for(let i=0;i<days;i++){const date=new Date(today);date.setDate(date.getDate() + i);batch.push({
-        listingId:listing.id,
-        date,
-        basePrice:parseFloat(listing.pricePerNight),
-        isAvailable:listing.defaultAvailability,
-        minStay:listing.minimumNights,
-        maxStay:listing.maximumNights,
-        checkInAllowed:listing.checkInDays.includes(date.getDay()),
-        checkOutAllowed:listing.checkOutDays.includes(date.getDay())
-      });}
-      await sequelize.models.BookingCalendar.bulkCreate(batch,{ignoreDuplicates:true,validate:true});
+//changed from Listings to Listing  
+ // Removed the hook that auto-generates 365 days of calendar entries
+ // This was intentionally removed to fix a bug where 365 calendar entries were
+ // being created whenever a listing was published, instead of only the
+ // specific dates selected by the user. Now calendar entries are created
+ // only when explicitly requested through the updateCalendar endpoint.
+
+  // NEW HOOK: Ensure every listing has calendar functionality working
+  Listing.addHook('afterCreate', async (listing, options) => {
+    try {
+      console.log(`Ensuring calendar step is enabled for new listing ${listing.id}...`);
+      
+      // Set calendar step to true
+      if (!listing.stepStatus || !listing.stepStatus.calendar) {
+        const stepStatus = listing.stepStatus || {};
+        await listing.update({
+          stepStatus: {
+            ...stepStatus,
+            calendar: true
+          }
+        }, { validate: false });
+        console.log(`Set calendar step to true for listing ${listing.id}`);
+      }
+      
+      // REMOVED: Previously we created automatic calendar entries here
+      // Now we only save exactly what the user selects via updateCalendar
+      
+    } catch (hookError) {
+      console.error(`Error in afterCreate hook for listing ${listing.id}: ${hookError.message}`);
+      // Don't throw the error to prevent blocking the create operation
     }
   });
+
     // Class Methods
     //changed from Listings to Listing  
     Listing.findByHost = function(hostId) {
