@@ -357,8 +357,18 @@ const adminController = {
                     await verification.verify(req.admin?.id, { transaction: t });
                 } else if (status === 'rejected') {
                     await verification.reject(req.admin?.id, reason || 'Rejected by admin', { transaction: t });
+                } else if (status === 'pending') {
+                    // Reset the verification record to pending
+                    await verification.update({ 
+                        status: 'pending',
+                        verifiedById: null,
+                        verifiedAt: null,
+                        rejectedById: null,
+                        rejectedAt: null,
+                        rejectionReason: null
+                    }, { transaction: t });
                 } else {
-                    await verification.update({ status: status === 'pending' ? 'pending' : 'pending' }, { transaction: t });
+                    await verification.update({ status: 'pending' }, { transaction: t });
                 }
             }
 
@@ -377,8 +387,8 @@ const adminController = {
                         await user.addRole(hostRole, { transaction: t });
                         console.log(`Added host role (${hostRole.id}) to user ${userId}`);
                     }
-                } else if (status === 'rejected') {
-                    // Remove host role if rejected
+                } else if (status === 'rejected' || status === 'pending') {
+                    // Remove host role if rejected or reset to pending
                     if (currentRoles.includes(hostRole.id)) {
                         await user.removeRole(hostRole, { transaction: t });
                         console.log(`Removed host role (${hostRole.id}) from user ${userId}`);

@@ -113,6 +113,14 @@ const login = async (req, res) => {
         }
 
         // Check if user is active
+        if (user.status === 'banned') {
+            return res.status(403).json({ 
+                message: 'This account has been banned',
+                code: 'ACCOUNT_BANNED',
+                reason: user.banReason || 'Contact support for more information'
+            });
+        }
+        
         if (user.status !== 'active') {
             return res.status(403).json({ message: 'Account is not active' });
         }
@@ -261,23 +269,30 @@ const resetPassword = async (req, res) => {
 };
 
 const validatePassword = (password) => {
-    const minLength = 8;
-    const hasUpperCase = /[A-Z]/.test(password);
-    const hasLowerCase = /[a-z]/.test(password);
-    const hasNumbers = /\d/.test(password);
-    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    try {
+        const minLength = 8;
+        const hasUpperCase = /[A-Z]/.test(password);
+        const hasLowerCase = /[a-z]/.test(password);
+        const hasNumbers = /\d/.test(password);
+        const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
-    if (password.length < minLength) {
-        throw new Error('Password must be at least 8 characters long');
-    }
-    if (!hasUpperCase || !hasLowerCase) {
-        throw new Error('Password must contain both uppercase and lowercase letters');
-    }
-    if (!hasNumbers) {
-        throw new Error('Password must contain at least one number');
-    }
-    if (!hasSpecialChar) {
-        throw new Error('Password must contain at least one special character');
+        if (password.length < minLength) {
+            return false;
+        }
+        if (!hasUpperCase || !hasLowerCase) {
+            return false;
+        }
+        if (!hasNumbers) {
+            return false;
+        }
+        if (!hasSpecialChar) {
+            return false;
+        }
+        
+        return true;
+    } catch (error) {
+        console.error('Error validating password:', error);
+        return false;
     }
 };
 
@@ -334,7 +349,20 @@ const handleGoogleCallback = async (req, res) => {
         // Check if user exists
         let user = await db.User.findOne({ where: { email: payload.email } });
         
-        if (!user) {
+        if (user) {
+            // Check if user is banned
+            if (user.status === 'banned') {
+                return res.redirect(`${process.env.FRONTEND_URL || process.env.appUrl}/home?error=${encodeURIComponent('Your account has been banned. Please contact support for more information.')}`);
+            }
+            
+            // Link Google account if not already linked
+            if (!user.googleId) {
+                await user.update({
+                    googleId: payload.sub,
+                    profilePicture: payload.picture
+                });
+            }
+        } else {
             // Create new user if doesn't exist
             const randomPassword = crypto.randomBytes(32).toString('hex');
             const salt = await bcrypt.genSalt(10);
@@ -349,12 +377,6 @@ const handleGoogleCallback = async (req, res) => {
                 googleId: payload.sub,
                 profilePicture: payload.picture,
                 passwordHash: passwordHash
-            });
-        } else if (!user.googleId) {
-            // Link Google account to existing user
-            await user.update({
-                googleId: payload.sub,
-                profilePicture: payload.picture
             });
         }
 
@@ -394,7 +416,24 @@ const googleAuth = async (req, res) => {
         // Check if user exists
         let user = await db.User.findOne({ where: { email: payload.email } });
         
-        if (!user) {
+        if (user) {
+            // Check if user is banned
+            if (user.status === 'banned') {
+                return res.status(403).json({ 
+                    message: 'This account has been banned',
+                    code: 'ACCOUNT_BANNED',
+                    reason: user.banReason || 'Contact support for more information'
+                });
+            }
+            
+            // Link Google account if not already linked
+            if (!user.googleId) {
+                await user.update({
+                    googleId: payload.sub,
+                    profilePicture: payload.picture
+                });
+            }
+        } else {
             // Create new user if doesn't exist
             const randomPassword = crypto.randomBytes(32).toString('hex');
             const salt = await bcrypt.genSalt(10);
@@ -409,12 +448,6 @@ const googleAuth = async (req, res) => {
                 googleId: payload.sub,
                 profilePicture: payload.picture,
                 passwordHash: passwordHash
-            });
-        } else if (!user.googleId) {
-            // Link Google account to existing user
-            await user.update({
-                googleId: payload.sub,
-                profilePicture: payload.picture
             });
         }
 
@@ -557,27 +590,6 @@ const getCurrentUser = async (req, res) => {
     }
 };
 
-// Add handleGoogleCallback to module exports
-module.exports = {
-    googleAuth,
-    register,
-    login,
-    verifyEmail,
-    forgotPassword,
-    resetPassword,
-    getGoogleAuthURL,
-    handleGoogleCallback ,
-    checkEmailAndPassword,
-    getCurrentUser
-};
-
-
-/**
- * Check email existence and validate password match
- * @route POST /api/auth/check-email-password
- */
-
-
 // Add Facebook authentication
 /**
  * Handle Facebook OAuth authentication
@@ -620,7 +632,25 @@ const facebookAuth = async (req, res) => {
         // Check if user exists
         let user = await db.User.findOne({ where: { email: data.email } });
 
-        if (!user) {
+        if (user) {
+            // Check if user is banned
+            if (user.status === 'banned') {
+                return res.status(403).json({
+                    success: false,
+                    message: 'This account has been banned',
+                    code: 'ACCOUNT_BANNED',
+                    reason: user.banReason || 'Contact support for more information'
+                });
+            }
+            
+            // Link Facebook account if not already linked
+            if (!user.facebookId) {
+                await user.update({
+                    facebookId: data.id,
+                    picture: data.picture?.data?.url || user.picture
+                });
+            }
+        } else {
             // Create new user if doesn't exist
             user = await db.User.create({
                 name: data.name,
@@ -630,12 +660,6 @@ const facebookAuth = async (req, res) => {
                 status: 'active',
                 facebookId: data.id,
                 picture: data.picture?.data?.url
-            });
-        } else if (!user.facebookId) {
-            // Link Facebook account to existing user
-            await user.update({
-                facebookId: data.id,
-                picture: data.picture?.data?.url || user.picture
             });
         }
 
@@ -670,5 +694,211 @@ const facebookAuth = async (req, res) => {
     }
 };
 
+/**
+ * Change user password
+ * @route POST /api/auth/change-password
+ */
+const changePassword = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { currentPassword, newPassword } = req.body;
+
+        // Find the user
+        const user = await db.User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check if current password is correct
+        const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Current password is incorrect' });
+        }
+
+        // Password validation is now handled by middleware, no need to validate here
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const passwordHash = await bcrypt.hash(newPassword, salt);
+
+        // Update password
+        await user.update({ 
+            passwordHash,
+            passwordChangedAt: new Date()
+        });
+
+        return res.json({ message: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Error changing password:', error);
+        return res.status(500).json({ message: 'Error changing password' });
+    }
+};
+
+/**
+ * Set up two-factor authentication
+ * @route GET /api/auth/2fa/setup
+ */
+const setupTwoFactor = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Find the user
+        const user = await db.User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check if 2FA is already enabled
+        if (user.twoFactorEnabled) {
+            return res.status(400).json({ message: 'Two-factor authentication is already enabled' });
+        }
+
+        // Generate a secret key
+        const secret = crypto.randomBytes(20).toString('hex');
+        
+        // Save the secret to the user record
+        await user.update({ twoFactorSecret: secret });
+
+        // Generate a QR code URL (for authenticator apps)
+        const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=otpauth://totp/${encodeURIComponent(user.email)}?secret=${secret}&issuer=HouseBooking`;
+
+        return res.json({ 
+            message: 'Two-factor authentication setup initialized',
+            qrCodeUrl,
+            secret
+        });
+    } catch (error) {
+        console.error('Error setting up 2FA:', error);
+        return res.status(500).json({ message: 'Error setting up two-factor authentication' });
+    }
+};
+
+/**
+ * Verify two-factor authentication code
+ * @route POST /api/auth/2fa/verify
+ */
+const verifyTwoFactor = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { code } = req.body;
+
+        // Find the user
+        const user = await db.User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Check if user has a 2FA secret
+        if (!user.twoFactorSecret) {
+            return res.status(400).json({ message: 'Two-factor authentication not set up' });
+        }
+
+        // Verify the code (simplified for this implementation)
+        // In a real implementation, you'd use a library like 'speakeasy' to verify TOTP codes
+        const isValid = code === '123456'; // This is a placeholder; use proper TOTP verification in production
+
+        if (!isValid) {
+            return res.status(400).json({ message: 'Invalid verification code' });
+        }
+
+        // Enable 2FA for the user
+        await user.update({ twoFactorEnabled: true });
+
+        return res.json({ message: 'Two-factor authentication enabled successfully' });
+    } catch (error) {
+        console.error('Error verifying 2FA code:', error);
+        return res.status(500).json({ message: 'Error verifying two-factor authentication' });
+    }
+};
+
+/**
+ * Toggle two-factor authentication
+ * @route POST /api/auth/2fa/toggle
+ */
+const toggleTwoFactor = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { enabled } = req.body;
+
+        // Find the user
+        const user = await db.User.findByPk(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // If trying to enable, but no secret exists
+        if (enabled && !user.twoFactorSecret) {
+            return res.status(400).json({ message: 'Two-factor authentication not set up yet' });
+        }
+
+        // If disabling, remove the secret as well
+        if (!enabled) {
+            await user.update({ 
+                twoFactorEnabled: false,
+                twoFactorSecret: null
+            });
+            return res.json({ message: 'Two-factor authentication disabled successfully' });
+        }
+
+        // Otherwise just update the enabled status
+        await user.update({ twoFactorEnabled: enabled });
+
+        return res.json({ 
+            message: enabled 
+                ? 'Two-factor authentication enabled successfully' 
+                : 'Two-factor authentication disabled successfully' 
+        });
+    } catch (error) {
+        console.error('Error toggling 2FA:', error);
+        return res.status(500).json({ message: 'Error updating two-factor authentication' });
+    }
+};
+
+/**
+ * Get security status
+ * @route GET /api/auth/security/status
+ */
+const getSecurityStatus = async (req, res) => {
+    try {
+        const userId = req.user.id;
+
+        // Find the user
+        const user = await db.User.findByPk(userId, {
+            attributes: ['id', 'twoFactorEnabled', 'passwordChangedAt', 'lastLogin']
+        });
+        
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        return res.json({
+            twoFactorEnabled: user.twoFactorEnabled || false,
+            passwordLastChanged: user.passwordChangedAt,
+            lastLogin: user.lastLogin
+        });
+    } catch (error) {
+        console.error('Error getting security status:', error);
+        return res.status(500).json({ message: 'Error retrieving security status' });
+    }
+};
+
 // Update module exports
+module.exports = {
+    googleAuth,
+    register,
+    login,
+    verifyEmail,
+    forgotPassword,
+    resetPassword,
+    getGoogleAuthURL,
+    handleGoogleCallback,
+    checkEmailAndPassword,
+    getCurrentUser,
+    facebookAuth,
+    changePassword,
+    setupTwoFactor,
+    verifyTwoFactor,
+    toggleTwoFactor,
+    getSecurityStatus
+};
 

@@ -9,11 +9,11 @@ const validateRequest = (schema) => {
                     const value = req.body[field];
                     
                     // Check required
-                    if (rules.required && !value) {
+                    if (rules.required && (value === undefined || value === null || value === '')) {
                         throw new ValidationError(`${field} is required`);
                     }
                     
-                    if (value) {
+                    if (value !== undefined && value !== null && value !== '') {
                         // Check type
                         if (rules.type && typeof value !== rules.type) {
                             throw new ValidationError(`${field} must be a ${rules.type}`);
@@ -29,9 +29,25 @@ const validateRequest = (schema) => {
                             throw new ValidationError(`${field} must be at most ${rules.max} characters`);
                         }
                         
-                        // Check pattern
-                        if (rules.pattern && !rules.pattern.test(value)) {
-                            throw new ValidationError(`${field} has invalid format`);
+                        // Check pattern - handle both string and RegExp objects
+                        if (rules.pattern) {
+                            let pattern = rules.pattern;
+                            let isValid = false;
+                            
+                            try {
+                                if (typeof pattern === 'string') {
+                                    pattern = new RegExp(pattern);
+                                }
+                                isValid = pattern.test(value);
+                            } catch (e) {
+                                console.error(`Error testing pattern for ${field}:`, e);
+                                isValid = false;
+                            }
+                            
+                            if (!isValid) {
+                                const message = rules.message || `${field} has invalid format`;
+                                throw new ValidationError(message);
+                            }
                         }
                         
                         // Check email format
@@ -44,6 +60,14 @@ const validateRequest = (schema) => {
             
             next();
         } catch (error) {
+            // Handle validation errors specifically
+            if (error instanceof ValidationError) {
+                return res.status(400).json({ 
+                    message: error.message,
+                    status: 'error',
+                    code: 'VALIDATION_ERROR'
+                });
+            }
             next(error);
         }
     };

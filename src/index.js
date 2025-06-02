@@ -13,6 +13,7 @@ const path = require('path');
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
 const authRoutes    = require('./routes/authRoutes');
+const userRoutes    = require('./routes/userRoutes');
 const bookingRoutes = require('./routes/bookingRoutes');
 const verify  = require('./routes/VerificationCodeRoutes')
 const hostApplicationRoutes = require('./routes/hostApplicationRoutes');
@@ -68,6 +69,7 @@ db.init()
 
 /* ───────────── API routes ───────────── */
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/listings', listingRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use("/api/verify", verify)
@@ -104,8 +106,15 @@ app.use((_, res) => res.status(404).json({
 
 /* ───────────── Error handler ───────────── */
 app.use((err, req, res, _next) => {
-    console.error(err.stack);
-    res.status(err.status || 500).json({
+    console.error('Error:', err.message);
+    if (err.stack) {
+        console.error(err.stack);
+    }
+    
+    // Set a valid status code (if err.status is invalid, default to 500)
+    const statusCode = (err.status >= 100 && err.status < 600) ? err.status : 500;
+    
+    res.status(statusCode).json({
         message: err.message || 'Something went wrong!',
         error: process.env.NODE_ENV === 'development' ? err.stack : undefined,
         status: 'error'
