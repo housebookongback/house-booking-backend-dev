@@ -2,13 +2,24 @@ require('dotenv').config();          // Load .env first
 require('express-async-errors');     // Catch async errors globally
 
 const express = require('express');
+const http = require('http');
 const cors    = require('cors');
 const helmet  = require('helmet');
 const morgan  = require('morgan');
 const config  = require('./config/config');
+const webpush = require('web-push'); // Add web-push
+const { initializeSocket } = require('./socket');
+
 const db      = require('./models'); // Import Sequelize models
 const { uploadMultiple } = require('./middleware/upload');
 const path = require('path');
+
+// Configure web-push with VAPID keys
+webpush.setVapidDetails(
+    process.env.VAPID_SUBJECT,
+    process.env.VAPID_PUBLIC_KEY,
+    process.env.VAPID_PRIVATE_KEY
+);
 
 // Routes
 const listingRoutes = require('./routes/listingRoutes');
@@ -26,6 +37,9 @@ const wishlistRoutes = require('./routes/wishlistRoutes'); // Add wishlist route
 const notificationRoutes = require('./routes/notificationRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const debugRoutes = require('./routes/debugRoutes'); // Debug routes for troubleshooting
+
+const pushNotificationRoutes = require('./routes/pushNotificationRoutes'); // Add this line
+const messageRoutes = require('./routes/messageRoutes'); // Add message routes
 
 const app = express();
 
@@ -83,6 +97,8 @@ app.use('/api/reviews', reviewRoutes); // Add review routes
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/debug', debugRoutes); // Debug routes for troubleshooting
+app.use('/api/push', pushNotificationRoutes); // Add this line
+app.use('/api/messages', messageRoutes); // Add message routes
 
 app.use('/api/wishlists', wishlistRoutes); // Add wishlist routes
 // Test upload route
@@ -126,8 +142,19 @@ app.use((err, req, res, _next) => {
 
 /* ───────────── Boot sequence ───────────── */
 const PORT = config.port || 3000;
-app.listen(PORT, () => {
-    console.log(`🚀  Server is running on http://localhost:${PORT}`);
+
+// Create HTTP server
+const server = http.createServer(app);
+
+// Initialize Socket.IO with the HTTP server
+const io = initializeSocket(server);
+
+// Make io accessible to routes if needed
+app.set('io', io);
+
+// Start the server
+server.listen(PORT, () => {
+    console.log(`🚀  API + Socket running on http://localhost:${PORT}`);
     console.log(`📚  API Documentation: http://localhost:${PORT}/api-docs`);
 });
 

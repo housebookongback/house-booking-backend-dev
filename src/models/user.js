@@ -92,10 +92,30 @@ module.exports = (sequelize, DataTypes) => {
         notificationPreferences: {
             type: DataTypes.JSON,
             defaultValue: {
-                email: true,
-                push: true,
-                sms: false
+                channels: { 
+                    email: true, 
+                    push: true, 
+                    sms: false 
+                },
+                types: {
+                    priceAlerts: true,
+                    newListings: true,
+                    bookingUpdates: true,
+                    specialOffers: true,
+                    availabilityUpdates: true,
+                    reviewRequests: true
+                },
+                frequency: {
+                    priceAlerts: 'immediate',
+                    newListings: 'immediate',
+                    specialOffers: 'immediate'
+                }
             }
+        },
+        pushSubscriptions: {
+            type: DataTypes.JSON,
+            allowNull: false,
+            defaultValue: []
         },
         privacySettings: {
             type: DataTypes.JSON,
@@ -209,11 +229,28 @@ module.exports = (sequelize, DataTypes) => {
         User.hasMany(models.Review, { foreignKey: 'userId', as: 'reviews' });
         User.hasMany(models.ReviewResponse, { foreignKey: 'userId', as: 'reviewResponses' });
         User.hasMany(models.ReviewReport, { foreignKey: 'userId', as: 'reviewReports' });
-        User.hasMany(models.Conversation, { foreignKey: 'userA', as: 'conversationsAsA' });
-        User.hasMany(models.Conversation, { foreignKey: 'userB', as: 'conversationsAsB' });
+        
+        // Remove old conversation associations
+        // User.hasMany(models.Conversation, { foreignKey: 'userA', as: 'conversationsAsA' });
+        // User.hasMany(models.Conversation, { foreignKey: 'userB', as: 'conversationsAsB' });
+        
+        // Add new conversation associations
+        User.belongsToMany(models.Conversation, {
+          through: models.ConversationParticipant,
+          foreignKey: 'userId',
+          otherKey: 'conversationId',
+          as: 'conversations',
+        });
+        User.hasMany(models.ConversationParticipant, {
+          foreignKey: 'userId',
+          as: 'conversationParticipants',
+        });
+        
         User.hasMany(models.Message, { foreignKey: 'senderId', as: 'sentMessages' });
-        User.hasMany(models.Message, { foreignKey: 'receiverId', as: 'receivedMessages' });
-        User.hasMany(models.MessageAttachment, { foreignKey: 'userId', as: 'messageAttachments' });
+        User.hasMany(models.MessageAttachment, { 
+            foreignKey: 'uploaderId', 
+            as: 'messageAttachments' 
+        });
         User.hasMany(models.Notification, { foreignKey: 'userId', as: 'notifications' });
         User.hasMany(models.SearchHistory, { foreignKey: 'userId', as: 'searchHistories' });
         User.hasMany(models.SearchFilter, { foreignKey: 'userId', as: 'searchFilters' });

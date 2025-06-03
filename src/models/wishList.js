@@ -16,6 +16,18 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: false,
             references: { model: 'Listings', key: 'id' },
             onDelete: 'CASCADE'
+        },
+        notificationSettings: {
+            type: DataTypes.JSON,
+            defaultValue: {
+                priceChanges: true,
+                availabilityUpdates: true,
+                specialOffers: true
+            }
+        },
+        lastNotifiedAt: {
+            type: DataTypes.DATE,
+            allowNull: true
         }
     }, {
         tableName: 'Wishlists',

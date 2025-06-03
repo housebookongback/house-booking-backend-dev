@@ -39,3 +39,6 @@ uploads/
 
 #config
 config/
+
+#cursorrules
+.cursorrules
