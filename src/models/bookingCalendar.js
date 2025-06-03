@@ -26,6 +26,7 @@ module.exports = (sequelize, DataTypes) => {
         basePrice: {
             type: DataTypes.DECIMAL(10, 2),
             allowNull: false,
+            defaultValue: 100,
             validate: { min: 0 }
         },
         minStay: {
@@ -73,15 +74,26 @@ module.exports = (sequelize, DataTypes) => {
                 if (!this.listingId) return; // Skip validation if no listingId
                 
                 try {
-                    const listing = await sequelize.models.Listings.findByPk(this.listingId);
-                    if (!listing) throw new Error('Invalid listing');
-                } catch (error) {
-                    // If this is part of a transaction, let the transaction handle the error
-                    if (this._options && this._options.transaction) {
-                        console.log(`Warning: Failed to validate listing ${this.listingId}`);
-                    } else {
-                        throw new Error('Invalid listing');
+                    // Use unscoped to find listing regardless of status
+                    const listing = await sequelize.models.Listings.unscoped().findByPk(this.listingId);
+                    
+                    if (!listing) {
+                        console.error(`BookingCalendar validation: Listing ${this.listingId} not found`);
+                        throw new Error(`Invalid listing: ID ${this.listingId} not found`);
                     }
+                    
+                    console.log(`BookingCalendar validation: Found listing ${this.listingId}`);
+                } catch (error) {
+                    console.error(`BookingCalendar validation error for listing ${this.listingId}:`, error.message);
+                    
+                    // If this is part of a transaction or validation is disabled, log warning but don't throw
+                    if ((this._options && this._options.transaction) || 
+                        (this._options && this._options.validate === false)) {
+                        console.log(`Warning: Skipping validation for listing ${this.listingId} in transaction or with validation disabled`);
+                        return; // Continue without throwing
+                    }
+                    
+                    throw new Error(`Invalid listing: ${error.message}`);
                 }
             },
             validStayLimits() {
@@ -116,11 +128,30 @@ module.exports = (sequelize, DataTypes) => {
             }
         },
         hooks: {
+            beforeValidate: async (calendar, options) => {
+                // Skip validation if explicitly disabled
+                if (options && options.validate === false) {
+                    console.log('BookingCalendar validation disabled, skipping checks');
+                    return;
+                }
+            },
             beforeCreate: async (calendar) => {
                 // If no explicit availability set, check listing defaults
                 if (calendar.isAvailable === null) {
-                    const listing = await sequelize.models.Listing.findByPk(calendar.listingId);
-                    calendar.isAvailable = listing?.defaultAvailability ?? true;
+                    try {
+                        const listing = await sequelize.models.Listing.unscoped().findByPk(calendar.listingId);
+                        calendar.isAvailable = listing?.defaultAvailability ?? true;
+                        
+                        // Also set default price from listing if not provided
+                        if (!calendar.basePrice || calendar.basePrice === 0) {
+                            calendar.basePrice = listing?.pricePerNight || 100;
+                        }
+                    } catch (error) {
+                        console.error('Error in beforeCreate hook:', error);
+                        // Use defaults if listing can't be found
+                        calendar.isAvailable = true;
+                        calendar.basePrice = calendar.basePrice || 100;
+                    }
                 }
             }
         }
@@ -144,7 +175,7 @@ module.exports = (sequelize, DataTypes) => {
 
     BookingCalendar.checkAvailability = async function(listingId, startDate, endDate, guests) {
         // Get the listing to check its default availability and pricing
-        const listing = await sequelize.models.Listing.findByPk(listingId);
+        const listing = await sequelize.models.Listing.unscoped().findByPk(listingId);
         if (!listing) return false;
 
         // Get all calendar entries for the date range
