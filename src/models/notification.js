@@ -46,6 +46,19 @@ module.exports = (sequelize, DataTypes) => {
             allowNull: true,
             defaultValue: {}
         },
+        priority: {
+            type: DataTypes.ENUM('low', 'medium', 'high'),
+            allowNull: false,
+            defaultValue: 'medium'
+        },
+        scheduledFor: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
+        expiresAt: {
+            type: DataTypes.DATE,
+            allowNull: true
+        },
         isActive: {
             type: DataTypes.BOOLEAN,
             allowNull: false,
