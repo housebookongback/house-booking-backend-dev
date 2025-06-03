@@ -28,7 +28,22 @@ module.exports = (sequelize, DataTypes) => {
       profilePicture: {
         type: DataTypes.STRING,
         allowNull: true,
-        validate: { isUrl: true }
+        validate: { 
+          isValidUrlOrPath(value) {
+            // Accept either a valid URL or a file path
+            if (!value) return; // Allow null/empty
+            
+            // Check if it's a URL (starts with http:// or https://)
+            const isUrl = /^https?:\/\//i.test(value);
+            
+            // Check if it's a file path (starts with / or ./ or ../)
+            const isPath = /^(\/|\.\/|\.\.\/)/i.test(value);
+            
+            if (!isUrl && !isPath) {
+              throw new Error('Profile picture must be a valid URL or file path');
+            }
+          }
+        }
       },
       phoneNumber: {
         type: DataTypes.STRING,

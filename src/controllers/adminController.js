@@ -1,16 +1,17 @@
-const { User, HostVerification, HostProfile, Role, sequelize, Booking, Payment, Listing, Location, PropertyType, Photo, Amenity, PropertyRule } = require('../models');
+const { User, HostVerification, HostProfile, Role, sequelize, Booking, Payment, Listing, Location, PropertyType, Photo, Amenity, PropertyRule, Review, AdminActionLog } = require('../models');
 const { Op } = require('sequelize');
 
 const adminController = {
     // List all host verifications with optional filters
     listHostVerifications: async (req, res) => {
         try {
-            const { status, type, page = 1, limit = 10 } = req.query;
+            const { status, type, page = 1, limit = 10, hostId } = req.query;
             const offset = (page - 1) * limit;
 
             const where = {};
             if (status) where.status = status;
             if (type) where.type = type;
+            if (hostId) where.hostId = hostId;
 
             const verifications = await HostVerification.findAndCountAll({
                 where,
@@ -356,8 +357,18 @@ const adminController = {
                     await verification.verify(req.admin?.id, { transaction: t });
                 } else if (status === 'rejected') {
                     await verification.reject(req.admin?.id, reason || 'Rejected by admin', { transaction: t });
+                } else if (status === 'pending') {
+                    // Reset the verification record to pending
+                    await verification.update({ 
+                        status: 'pending',
+                        verifiedById: null,
+                        verifiedAt: null,
+                        rejectedById: null,
+                        rejectedAt: null,
+                        rejectionReason: null
+                    }, { transaction: t });
                 } else {
-                    await verification.update({ status: status === 'pending' ? 'pending' : 'pending' }, { transaction: t });
+                    await verification.update({ status: 'pending' }, { transaction: t });
                 }
             }
 
@@ -376,8 +387,8 @@ const adminController = {
                         await user.addRole(hostRole, { transaction: t });
                         console.log(`Added host role (${hostRole.id}) to user ${userId}`);
                     }
-                } else if (status === 'rejected') {
-                    // Remove host role if rejected
+                } else if (status === 'rejected' || status === 'pending') {
+                    // Remove host role if rejected or reset to pending
                     if (currentRoles.includes(hostRole.id)) {
                         await user.removeRole(hostRole, { transaction: t });
                         console.log(`Removed host role (${hostRole.id}) from user ${userId}`);
@@ -664,6 +675,86 @@ const adminController = {
             res.json({ message: 'User unbanned successfully', user: { id: user.id, status: user.status } });
         } catch (error) {
             res.status(500).json({ message: 'Error unbanning user', error: error.message });
+        }
+    },
+
+    // Block user from review context
+    blockUserFromReview: async (req, res) => {
+        try {
+            const userId = req.params.id;
+            const { reviewId, reason } = req.body;
+            
+            // Find the user
+            const user = await User.findByPk(userId);
+            
+            if (!user) {
+                return res.status(404).json({ message: 'User not found' });
+            }
+            
+            // Find the review to keep as evidence
+            const review = await Review.findByPk(reviewId);
+            
+            if (!review) {
+                return res.status(404).json({ message: 'Review not found' });
+            }
+            
+            // Create a log entry for this action if AdminActionLog exists
+            try {
+                // Check if AdminActionLog is defined and properly initialized
+                if (AdminActionLog && typeof AdminActionLog.create === 'function') {
+                    console.log('Creating admin action log for blocking user');
+                    await AdminActionLog.create({
+                        adminId: req.admin?.id || 'system',
+                        actionType: 'block_user',
+                        targetType: 'user',
+                        targetId: userId,
+                        details: {
+                            reason,
+                            reviewId,
+                            reviewContent: review.comment,
+                            reviewRating: review.rating
+                        }
+                    });
+                    console.log('Admin action log created successfully');
+                } else {
+                    console.log('AdminActionLog model not available or not properly initialized');
+                }
+            } catch (logError) {
+                console.warn('Failed to create admin action log:', logError);
+                // Continue with user blocking even if logging fails
+            }
+            
+            // Update user status
+            await user.update({ 
+                status: 'banned',
+                banReason: reason || `Banned due to inappropriate review content`,
+                bannedBy: req.admin?.id || 'system',
+                bannedAt: new Date()
+            });
+            
+            console.log(`User ${userId} banned successfully`);
+            
+            // If you want to automatically hide the review as well
+            await review.update({
+                isPublic: false,
+                status: 'rejected',
+                rejectedReason: 'Automatically hidden due to user ban',
+                moderatedBy: req.admin?.id || 'system',
+                moderatedAt: new Date()
+            });
+            
+            console.log(`Review ${reviewId} marked as rejected`);
+            
+            res.json({ 
+                message: 'User blocked successfully', 
+                user: { 
+                    id: user.id, 
+                    status: user.status 
+                } 
+            });
+        } catch (error) {
+            console.error('Error blocking user from review:', error);
+            res.status(500).json({ message: 'Error blocking user', error: error.message });
         }
     },
 

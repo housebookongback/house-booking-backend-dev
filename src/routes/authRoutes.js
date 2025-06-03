@@ -9,7 +9,7 @@ const passwordSchema = {
     type: 'string',
     required: true,
     min: 8,
-    pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+    pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>]).{8,}$/,
     message: 'Password must contain at least 8 characters, one uppercase letter, one lowercase letter, one number, and one special character'
 };
 
@@ -50,6 +50,25 @@ const resetPasswordSchema = {
     }
 };
 
+const changePasswordSchema = {
+    body: {
+        currentPassword: { type: 'string', required: true },
+        newPassword: passwordSchema
+    }
+};
+
+const twoFactorSetupSchema = {
+    body: {
+        code: { type: 'string', required: true, pattern: /^\d{6}$/ }
+    }
+};
+
+const twoFactorToggleSchema = {
+    body: {
+        enabled: { type: 'boolean', required: true }
+    }
+};
+
 // Routes
 router.post('/register', validateRequest(registerSchema), authController.register);
 router.post('/home', validateRequest(loginSchema), authController.login);
@@ -63,5 +82,12 @@ router.post('/checking', authController.checkEmailAndPassword);
 // router.get('/auth/facebook', authController.loginWithFacebook)
 // Add route to get current user (protected by JWT authentication)
 router.get('/me', authenticateJWT, authController.getCurrentUser);
+
+// Security routes
+router.post('/change-password', authenticateJWT, validateRequest(changePasswordSchema), authController.changePassword);
+router.get('/2fa/setup', authenticateJWT, authController.setupTwoFactor);
+router.post('/2fa/verify', authenticateJWT, validateRequest(twoFactorSetupSchema), authController.verifyTwoFactor);
+router.post('/2fa/toggle', authenticateJWT, validateRequest(twoFactorToggleSchema), authController.toggleTwoFactor);
+router.get('/security/status', authenticateJWT, authController.getSecurityStatus);
 
 module.exports = router;
