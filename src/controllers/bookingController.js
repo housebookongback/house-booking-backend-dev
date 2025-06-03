@@ -82,7 +82,6 @@ const bookingController = {
                 if (!entry.isAvailable) {
                     unavailableDates.push(entry.date);
                 }
-                // Track the most restrictive stay requirements
                 if (entry.minStay > minStayRequired) {
                     minStayRequired = entry.minStay;
                 }
@@ -91,30 +90,32 @@ const bookingController = {
                 }
             }
 
+            // Fallback to listing-level min/max stay if not found in calendar
+            if ((minStayRequired === 1 || !minStayRequired) && listing.minStay) {
+                minStayRequired = listing.minStay;
+            }
+            if ((maxStayAllowed === null || maxStayAllowed === undefined) && listing.maxStay) {
+                maxStayAllowed = listing.maxStay;
+            }
+            if (maxStayAllowed === null || maxStayAllowed === undefined) {
+                maxStayAllowed = 365; // or your chosen default
+            }
+
             // Calculate number of nights
             const requestedNights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
             // Check if calendarEntries covers all requested nights
+            let warning = null;
+            let availableDates = [];
             if (!calendarEntries || calendarEntries.length < requestedNights) {
-                // Find all available dates for the listing
-                const availableDates = await db.BookingCalendar.findAll({
+                availableDates = await db.BookingCalendar.findAll({
                     where: {
                         listingId,
                         isAvailable: true
                     },
                     order: [['date', 'ASC']]
                 });
-
-                return res.status(400).json({
-                    success: false,
-                    error: 'Some or all dates in the selected range are not available in the calendar',
-                    stayRequirements: {
-                        minimumNights: minStayRequired,
-                        maximumNights: maxStayAllowed
-                    },
-                    availableDates: availableDates.map(d => d.date),
-                    suggestion: 'Please adjust your dates based on the stay requirements and availability'
-                });
+                warning = 'Some or all dates in the selected range are not available in the calendar';
             }
 
             // Validate stay duration against requirements
@@ -145,18 +146,30 @@ const bookingController = {
 
             // 6. Calculate total price
             let totalPrice = 0;
-            for (const entry of calendarEntries) {
-                totalPrice += parseFloat(entry.basePrice);
+            if (calendarEntries && calendarEntries.length === requestedNights) {
+                // All days are available in the calendar, use their prices
+                for (const entry of calendarEntries) {
+                    totalPrice += parseFloat(entry.basePrice);
+                }
+            } else {
+                // Fallback: use listing's pricePerNight for all requested nights
+                totalPrice = requestedNights * parseFloat(listing.pricePerNight || 0);
             }
-
             if (listing.cleaningFee) {
                 totalPrice += parseFloat(listing.cleaningFee);
             }
             if (listing.securityDeposit) {
                 totalPrice += parseFloat(listing.securityDeposit);
             }
-
             totalPrice = parseFloat(totalPrice.toFixed(2));
+
+            // Prevent creation if totalPrice is zero
+            if (totalPrice <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: 'Cannot create booking request: total price is zero. Please select available dates.'
+                });
+            }
     
             // 7. Create booking request
             const bookingRequest = await db.BookingRequest.create({
@@ -185,9 +198,20 @@ const bookingController = {
             });
     
             // 8. Send response
-            return res.status(201).json({
+            return res.status(201).json({data:{
                 success: true,
-                message: 'Booking request created successfully',
+                message: warning
+                    ? 'Booking request created, but with a warning'
+                    : 'Booking request created successfully',
+                warning,
+                stayRequirements: {
+                    minimumNights: minStayRequired,
+                    maximumNights: maxStayAllowed
+                },
+                availableDates: availableDates.map(d => d.date),
+                suggestion: warning
+                    ? 'Please adjust your dates based on the stay requirements and availability'
+                    : undefined,
                 data: {
                     id: bookingRequest.id,
                     listingId: bookingRequest.listingId,
@@ -202,7 +226,7 @@ const bookingController = {
                     expiresAt: bookingRequest.expiresAt,
                     createdAt: bookingRequest.createdAt
                 }
-            });
+            }});
     
         } catch (error) {
             console.error('Error creating booking request:', error);
@@ -217,10 +241,10 @@ const bookingController = {
                     }))
                 });
             }
-            return res.status(500).json({
+            return res.status(500).json({data:{
                 success: false,
                 error: 'Failed to create booking request'
-            });
+            }});
         }
     }
     ,
