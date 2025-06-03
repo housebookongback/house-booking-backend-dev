@@ -96,6 +96,7 @@ async function seedCommunicationModels() {
         
         return {
           messageId: message.id,
+          uploaderId: message.senderId,
           fileName: `file_${faker.string.alphanumeric(8)}.${fileType.split('/')[1]}`,
           fileType,
           fileSize: faker.number.int({ min: 1000, max: 10000000 }),
