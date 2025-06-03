@@ -163,7 +163,14 @@ module.exports = (sequelize, DataTypes) => {
     };
 
     BookingCalendar.findByDateRange = function(listingId, startDate, endDate) {
-        return this.scope('byListing', listingId, 'byDateRange', startDate, endDate).findAll();
+        return this.findAll({
+            where: {
+                listingId,
+                date: {
+                    [Op.between]: [startDate, endDate]
+                }
+            }
+        });
     };
 
     BookingCalendar.checkAvailability = async function(listingId, startDate, endDate, guests) {

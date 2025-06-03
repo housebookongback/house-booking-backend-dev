@@ -32,6 +32,8 @@ const hostRoutes = require('./routes/hostRoutes');
 const guestRoutes = require('./routes/guestRoutes');
 const adminRoutes = require('./routes/adminRoutes'); // Add admin routes
 const reviewRoutes = require('./routes/reviewRoutes'); // Add review routes
+const wishlistRoutes = require('./routes/wishlistRoutes'); // Add wishlist routes
+
 const notificationRoutes = require('./routes/notificationRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const debugRoutes = require('./routes/debugRoutes'); // Debug routes for troubleshooting
@@ -98,6 +100,7 @@ app.use('/api/debug', debugRoutes); // Debug routes for troubleshooting
 app.use('/api/push', pushNotificationRoutes); // Add this line
 app.use('/api/messages', messageRoutes); // Add message routes
 
+app.use('/api/wishlists', wishlistRoutes); // Add wishlist routes
 // Test upload route
 app.patch('/test-upload', uploadMultiple, (req, res) => {
   console.log('⚡ req.file:', req.file);
